@@ -68,8 +68,7 @@ async def job_autoseed():
 async def lifespan(app: FastAPI):
     init_db()
     bot = Bot(get_bot_token())
-    dp = Dispatcher()
-    bot_module.register_router(dp)
+    dp = _get_dp()
 
     # ضبط webhook في بيئات النشر (Render يوفر الحقل الجزئي)
     base_url = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("WEBAPP_DOMAIN")
@@ -114,6 +113,7 @@ _dp_holder = {"dp": None}
 
 
 def _get_dp() -> Dispatcher:
+    """Dispatcher واحد فقط — إنشاء Router أكثر من مرة يرفع 'Router is already attached'."""
     if _dp_holder["dp"] is None:
         bot = Bot(get_bot_token())
         dp = Dispatcher()
