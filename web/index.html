@@ -2,103 +2,208 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>سهم — لعبة السوق الحقيقية</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a0e13">
+<title>سهم ⚡ — لعبة السوق الحقيقية</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/app/style.css">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="/app/mock.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-<header>
-  <div class="brand">سهم ⚡</div>
-  <div class="balance" id="balance">— سهم</div>
+
+<!-- شاشة الإقلاع -->
+<div id="splash">
+  <div class="splash-logo">سهم <span class="bolt">⚡</span></div>
+  <div class="splash-sub">لعبة السوق الحقيقية</div>
+  <div class="splash-dots"><span></span><span></span><span></span></div>
+</div>
+
+<!-- بوابة "افتح من البوت" -->
+<div id="gate" class="hidden">
+  <div class="gate-card">
+    <div class="gate-emoji">🎮</div>
+    <h2>افتح السهم من داخل تيليجرام</h2>
+    <p>هذا التطبيق مصمّم للعمل داخل بوت <b>@Sahmgame_bot</b><br>أرسل له <b>/start</b> ثم اضغط زر «🎉 افتح اللعبة».</p>
+  </div>
+</div>
+
+<!-- الشريط العلوي -->
+<header class="topbar" id="topbar">
+  <div class="brand">سهم <span class="bolt">⚡</span></div>
+  <div class="top-user">
+    <div class="chip level" id="level-chip">مستوى 1</div>
+    <div class="chip balance"><span class="coin">◈</span><span id="balance">—</span></div>
+  </div>
 </header>
 
-<nav>
-  <button class="tab active" data-tab="markets">📊 الأسعار</button>
-  <button class="tab" data-tab="arcade">⚡ الأركيد</button>
-  <button class="tab" data-tab="predict">🎯 التوقّع</button>
-  <button class="tab" data-tab="portfolio">💼 المحفظة</button>
-  <button class="tab" data-tab="leaderboard">🏆 الصدارة</button>
-</nav>
+<main id="main">
 
-<main>
-  <!-- الأسعار -->
+  <!-- ═══ السوق ═══ -->
   <section id="tab-markets" class="tabview active">
-    <div class="filters">
-      <button class="chip active" data-mkt="all">الكل</button>
-      <button class="chip" data-mkt="SA">🇸🇦 تداول</button>
-      <button class="chip" data-mkt="US">🇺🇸 الأمريكي</button>
-      <button class="chip" data-mkt="CRYPTO">🌐 كريبتو</button>
+    <div class="search-wrap">
+      <input id="search" type="text" placeholder="🔍 امن... المالية، راجحي، أرامكو" autocomplete="off">
     </div>
-    <div id="prices-list" class="cards"></div>
+    <div class="chips-row" id="market-chips">
+      <button class="chip px active" data-mkt="all">الكل</button>
+      <button class="chip px" data-mkt="SA">🇸🇦 تداول</button>
+      <button class="chip px" data-mkt="US">🇺🇸 الأمريكي</button>
+      <button class="chip px" data-mkt="CRYPTO">🌐 كريبتو</button>
+    </div>
+    <div id="prices-list" class="stack"></div>
   </section>
 
-  <!-- الأركيد -->
+  <!-- ═══ الأركيد ═══ -->
   <section id="tab-arcade" class="tabview">
-    <div id="arcade-intro" class="card intro">
-      <h2>⚡ جولة الأركيد</h2>
-      <p>تاريخ حقيقي، زمن مضغوط: <b>كل 4 ثوانٍ = يوم تداول</b> 📈</p>
-      <ul>
-        <li>💰 رأس المال: <b>100,000</b> (وهمي)</li>
-        <li>🧾 العمولة: 0.1%</li>
-        <li>🏆 الفوز: <b>العائد الزائد</b> على السوق</li>
-        <li>📐 نافذة عشوائية من تاريخ حقيقي — كل جولة فريدة!</li>
-      </ul>
-      <button id="arcade-start" class="btn primary">⚡ ابدأ الجولة</button>
+
+    <div id="arcade-intro">
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-emoji">⚡</div>
+        <h1>جولة الأركيد</h1>
+        <p>سافر في الزمن إلى يوم حقيقي من تاريخ السوق —<br>سطّر يومك وتداول بذكاء</p>
+        <div class="hero-tags">
+          <span class="tag">📅 يوم = 4 ثوانٍ</span>
+          <span class="tag">💰 رأس مال 100,000</span>
+          <span class="tag">🧾 عمولة 0.1%</span>
+        </div>
+        <button id="arcade-start" class="btn btn-primary btn-xl">🚀 ابدأ الجولة</button>
+        <p class="hero-hint">🏆 الفوز بالعائد <b>الزائد</b> عن السوق — كل جولة نافذة تاريخية عشوائية فريدة</p>
+      </div>
     </div>
 
     <div id="arcade-game" class="hidden">
       <div class="arcade-head">
-        <div><span id="arcade-symbol"></span><br><small id="arcade-date"></small></div>
-        <div class="arcade-stats">
-          <div>قيمة المحفظة<br><b id="arcade-value">100,000</b></div>
-          <div>النقد<br><b id="arcade-cash">100,000</b></div>
-          <div>الكمية<br><b id="arcade-qty">0</b></div>
+        <div>
+          <div class="arcade-title" id="arcade-symbol">—</div>
+          <div class="arcade-date" id="arcade-date">—</div>
+        </div>
+        <div class="arcade-progress-wrap">
+          <div class="arcade-progress"><div id="arcade-progress-bar"></div></div>
+          <div class="arcade-day" id="arcade-dayno">اليوم 1</div>
         </div>
       </div>
-      <div id="arcade-chart" class="chart"></div>
-      <div class="trade-box">
-        <input id="trade-qty" type="number" placeholder="الكمية (تُباع بالعكس للكامل)" value="1000">
-        <button id="btn-buy" class="btn buy">شراء</button>
-        <button id="btn-sell" class="btn sell">بيع</button>
+
+      <div class="arcade-value-card">
+        <div class="av-label">قيمة المحفظة</div>
+        <div class="av-num" id="arcade-value">100,000</div>
+        <div class="av-sub" id="arcade-return"></div>
       </div>
-      <div id="arcade-log" class="log"></div>
-      <button id="arcade-finish" class="btn ghost">إنهاء الجولة ❗</button>
+
+      <div id="arcade-chart" class="chart"></div>
+
+      <div class="arcade-stats">
+        <div class="stat"><span class="stat-l">النقد</span><b id="arcade-cash" class="mono">100,000</b></div>
+        <div class="stat"><span class="stat-l">الكمية</span><b id="arcade-qty" class="mono">0</b></div>
+        <div class="stat"><span class="stat-l">المتوسط</span><b id="arcade-avg" class="mono">—</b></div>
+        <div class="stat"><span class="stat-l">السعر</span><b id="arcade-price" class="mono">—</b></div>
+      </div>
+
+      <div class="trade-panel">
+        <div class="qty-presets" id="arcade-presets">
+          <button data-q="0.25">25%</button>
+          <button data-q="0.5">50%</button>
+          <button data-q="1">100%</button>
+          <button data-q="0">الكل الذي أملك</button>
+        </div>
+        <div class="trade-actions">
+          <button id="btn-buy" class="btn btn-buy btn-lg">شراء</button>
+          <button id="btn-sell" class="btn btn-sell btn-lg">بيع</button>
+        </div>
+        <div class="arcade-log" id="arcade-log"></div>
+        <button id="arcade-finish" class="btn btn-ghost btn-block">إنهاء الجولة الآن</button>
+      </div>
     </div>
 
-    <div id="arcade-result" class="card hidden">
-      <h2 id="result-rank">🎉 النتيجة</h2>
-      <div id="result-details"></div>
-      <button id="arcade-again" class="btn primary">جولة جديدة ⚡</button>
+    <div id="arcade-result" class="hidden">
+      <div class="result-card" id="result-card">
+        <div class="result-rank" id="result-rank">—</div>
+        <div class="result-pct" id="result-pct">—</div>
+        <div class="result-grid">
+          <div><span>قيمتك النهائية</span><b id="r-final">—</b></div>
+          <div><span>عائد السهم</span><b id="r-stock">—</b></div>
+          <div><span>عائد السوق</span><b id="r-bench">—</b></div>
+          <div><span>العائد الزائد</span><b id="r-excess">—</b></div>
+          <div><span>أيام الجولة</span><b id="r-days">—</b></div>
+          <div><span>المكافأة</span><b id="r-bonus">—</b></div>
+        </div>
+        <div class="result-xp" id="result-xp"></div>
+        <button id="arcade-again" class="btn btn-primary btn-block btn-lg">⚡ جولة جديدة</button>
+      </div>
     </div>
   </section>
 
-  <!-- التوقّع -->
+  <!-- ═══ التوقعات ═══ -->
   <section id="tab-predict" class="tabview">
-    <p class="hint">توقّع إغلاق اليوم بتّلاث نتائج — الإجابة الصعبة نقاطها أكبر 🎁</p>
-    <div id="predict-list" class="cards"></div>
-    <h3>توقعاتي القائمة</h3>
-    <div id="my-predictions" class="cards"></div>
-  </section>
-
-  <!-- المحفظة -->
-  <section id="tab-portfolio" class="tabview">
-    <div class="card">
-      <div>💳 الرصيد النقدي</div>
-      <div class="big" id="pf-cash">—</div>
-      <div>🏅 المستوى: <span id="pf-level">—</span> • XP: <span id="pf-xp">—</span></div>
+    <div class="notice">
+      🎯 توقّع إغلاق اليوم — <b>الثبات أصعب فيُكافأ أكثر</b> (صعود ≈2 نقطة • هبوط ≈3 • ثبات 4)
     </div>
-    <div id="pf-positions" class="cards"></div>
+    <div id="predict-list" class="stack"></div>
+    <h3 class="sec-title">📋 توقعاتي القائمة</h3>
+    <div id="my-predictions" class="stack"></div>
   </section>
 
-  <!-- الصدارة -->
-  <section id="tab-leaderboard" class="tabview">
-    <div id="lb-list" class="cards"></div>
+  <!-- ═══ المحفظة ═══ -->
+  <section id="tab-portfolio" class="tabview">
+    <div class="pf-hero">
+      <div class="pf-hero-label">صافي الثروة</div>
+      <div class="pf-hero-value mono" id="pf-net">—</div>
+      <div class="pf-hero-sub" id="pf-settled">—</div>
+      <div class="pf-row">
+        <div><span>🪙 النقد</span><b class="mono" id="pf-cash">—</b></div>
+        <div><span>📦 المستثمر</span><b class="mono" id="pf-invested">—</b></div>
+      </div>
+    </div>
+    <div class="level-card">
+      <div class="level-head"><span>🏅 المستوى <b id="pf-level">1</b></span><span id="pf-xp-hint">—</span></div>
+      <div class="level-bar"><div id="pf-xp-bar"></div></div>
+    </div>
+    <h3 class="sec-title">المراكز</h3>
+    <div id="pf-positions" class="stack"></div>
   </section>
+
+  <!-- ═══ الصدارة ═══ -->
+  <section id="tab-leaderboard" class="tabview">
+    <h3 class="sec-title center">🏆 أبطال الأسبوع</h3>
+    <div id="lb-podium" class="podium"></div>
+    <div id="lb-list" class="stack"></div>
+  </section>
+
 </main>
 
-<div id="toast" class="toast hidden"></div>
+<!-- شريط التنقل السفلي -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="tab active" data-tab="markets">
+    <svg viewBox="0 0 24 24"><path d="M5 4v13M3 9h4M3 13h4M15 4v10M13 8h4M13 11h4M9 20h12" stroke-linecap="round"/><rect x="17" y="4" width="2" height="10"/></svg>
+    <span>السوق</span>
+  </button>
+  <button class="tab" data-tab="arcade">
+    <svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/></svg>
+    <span>الأركيد</span>
+  </button>
+  <button class="tab" data-tab="predict">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
+    <span>التوقعات</span>
+  </button>
+  <button class="tab" data-tab="portfolio">
+    <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M3 12h18"/></svg>
+    <span>المحفظة</span>
+  </button>
+  <button class="tab" data-tab="leaderboard">
+    <svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4a1 1 0 0 0-1 1c0 2.5 1.5 4 4 4.5M17 6h3a1 1 0 0 1 1 1c0 2.5-1.5 4-4 4.5"/></svg>
+    <span>الصدارة</span>
+  </button>
+</nav>
+
+<!-- ورقة التداول -->
+<div id="sheet-backdrop" class="hidden">
+  <div class="sheet" id="sheet-trade"></div>
+</div>
+
+<div id="toast"></div>
 
 <script src="/app/app.js"></script>
 </body>

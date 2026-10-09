@@ -1,0 +1,100 @@
+/* سهم — وضع المعاينة التجريبي (?mock=1)
+   يفعّل بيانات تجريبية لعرض التصميم دون تيليجرام — صفرة الخادم الحقيقي لا تتأثر */
+(function () {
+  if (!new URLSearchParams(location.search).has('mock')) return;
+
+  const prices = {
+    '2222.SR': { name: 'أرامكو السعودية', market: 'SA', price: 25.74, change_pct: -0.39 },
+    '1120.SR': { name: 'مصرف الراجحي', market: 'SA', price: 62.30, change_pct: -1.42 },
+    '2010.SR': { name: 'سابك', market: 'SA', price: 45.80, change_pct: -1.63 },
+    '1180.SR': { name: 'بنك الإنماء', market: 'SA', price: 21.10, change_pct: 0.48 },
+    '2280.SR': { name: 'المراعي', market: 'SA', price: 54.90, change_pct: 1.21 },
+    'AAPL': { name: 'Apple', market: 'US', price: 178.20, change_pct: 0.85 },
+    'MSFT': { name: 'Microsoft', market: 'US', price: 415.10, change_pct: -0.32 },
+    'NVDA': { name: 'NVIDIA', market: 'US', price: 131.60, change_pct: 2.44 },
+    'TSLA': { name: 'Tesla', market: 'US', price: 262.40, change_pct: -1.10 },
+    'BTC-USD': { name: 'بيتكوين', market: 'CRYPTO', price: 68240, change_pct: 1.8 },
+    'ETH-USD': { name: 'إيثريوم', market: 'CRYPTO', price: 3420, change_pct: -0.9 },
+  };
+
+  let holdings = { 'AAPL': 50, 'BTC-USD': 0.35 };
+  let cash = 72000;
+  let pricesUpdated = prices;
+  let arcade = null;
+
+  function around(name, market, symbol) {
+    const p = pricesUpdated[symbol];
+    return { symbol, name: p.name, market: p.market, price: p.price, change_pct: p.change_pct, updated_at: new Date().toISOString() };
+  }
+
+  const routes = {
+    '/api/auth': { token: 'mock:1', user: { id: 1, username: 'لاعب تجريبي', coins_balance: 72000, level: 3, xp: 1140 } },
+    '/api/prices': () => Object.entries(prices).map(([s, p]) => ({ symbol: s, name: p.name, market: p.market, price: p.price, change_pct: p.change_pct, updated_at: new Date().toISOString() })),
+    '/api/trade': () => ({ ok: true, price: 99, cash, holdings: 1 }),
+    '/api/portfolio': () => ({
+      balance: cash, level: 3, xp: 1140,
+      positions: Object.entries(holdings).filter(([, q]) => q > 0).map(([s, q]) => {
+        const p = pricesUpdated[s];
+        return { symbol: s, name: p.name, market: p.market, quantity: q, avg_cost: p.price * 0.94, current_price: p.price, market_value: q * p.price, pnl_pct: (1 / 0.94 - 1) * 100 };
+      }),
+    }),
+    '/api/predictions': () => [{
+      id: 9, symbol: 'NVDA', direction: 'up', result: 'pending',
+      resolves_at: new Date(Date.now() + 5 * 3600e3).toISOString(), points: 0,
+    }],
+    '/api/predict': { ok: true },
+    '/api/leaderboard': [
+      { username: 'أبو سهم', level: 7, weekly_value: 512000, rounds: 12 },
+      { username: 'المضارب', level: 5, weekly_value: 442000, rounds: 9 },
+      { username: 'مهم sandbag', level: 3, weekly_value: 318000, rounds: 6 },
+      { username: 'قنديل الصرة', level: 2, weekly_value: 250000, rounds: 4 },
+      { username: 'الصاعد', level: 2, weekly_value: 180000, rounds: 3 },
+    ],
+    '/api/arcade/start': () => {
+      const sym = 'NVDA', price = 95;
+      arcade = { round_id: 77, symbol: sym, name: 'NVIDIA', capital: 100000, step_seconds: 4, started: Date.now(), cash: 100000, holdings: 0, avg: 0, step: 0, price };
+      return { round_id: arcade.round_id, symbol: sym, name: arcade.name, capital: 100000, session_len: 40, step_seconds: 4, start_ts: '2021-03-02' };
+    },
+    '/api/arcade/id/step': () => {
+      if (!arcade) return {};
+      const price = arcade.price * (1 + (Math.random() - 0.48) * 0.018);
+      const candle = {
+        ts: '2021-03-1' + (1 + arcade.step % 9), open: arcade.price, close: price,
+        high: Math.max(arcade.price, price) * 1.006, low: Math.min(arcade.price, price) * 0.994,
+        volume: Math.round(2e6 + Math.random() * 8e5),
+      };
+      return { round_id: arcade.round_id, step: arcade.step, total_steps: 40, candle, cash: arcade.cash, holdings: arcade.holdings, portfolio_value: arcade.cash + arcade.holdings * price, is_last: arcade.step >= 39 };
+    },
+    '/api/arcade/id/trade': () => ({ ok: true, cash: arcade.cash, holdings: arcade.holdings, avg_cost: arcade.avg, executed_price: arcade.price }),
+    '/api/arcade/id/finish': () => ({ final_value: 108300, capital: 100000, return_pct: 8.3, benchmark_return_pct: 2.1, excess_return_pct: 6.2, rank: 'محترف 🥇', points: 220, bonus_coins: 830, days: 34 }),
+  };
+
+  const realFetch = window.fetch.bind(window);
+  window.fetch = async function (url, opts = {}) {
+    let path = String(url).replace(/^https?:\/\/[^/]+/, '');
+    // توحيد مسارات الأركيد الديناميكية: /api/arcade/<id>/step → /api/arcade/id/step
+    path = path.replace(/\/api\/arcade\/\d+\//, '/api/arcade/id/');
+    const key = Object.keys(routes).find(k => path === k || path.startsWith(k + '/') || path.startsWith(k + '?'));
+    if (!key) return realFetch(url, opts);
+    await new Promise(r => setTimeout(r, 350)); // إحساس شبكة واقعي
+    const R = routes[key];
+    let data = typeof R === 'function' ? R() : R;
+    // مسارات أركيد الديناميكية
+    if (path.endsWith('/step')) { arcade.step = Math.min(arcade.step + 1, 39); }
+    if (path.endsWith('/trade')) {
+      const side = JSON.parse((opts.body || '{}')).side;
+      const q = JSON.parse((opts.body || '{}')).quantity || 0;
+      if (side === 'buy') { const c = arcade.price * q * 1.001; arcade.cash -= c; arcade.holdings += q; arcade.avg = arcade.holdings ? arcade.price : 0; }
+      else { arcade.cash += arcade.price * q * 0.999; arcade.holdings -= q; if (arcade.holdings < 0.001) arcade.holdings = 0; }
+      data = { ok: true, cash: arcade.cash, holdings: arcade.holdings, avg_cost: arcade.avg, executed_price: arcade.price };
+    }
+    if (key === '/api/trade') {
+      const b = JSON.parse((opts.body || '{}'));
+      pricesUpdated[b.symbol] = pricesUpdated[b.symbol];
+      if (b.side === 'buy') { const p = pricesUpdated[b.symbol].price; cash -= p * b.quantity * 1.001; }
+      else if (holdings[b.symbol]) { const p = pricesUpdated[b.symbol].price; cash += p * Math.min(b.quantity, holdings[b.symbol]) * 0.999; }
+      return { ok: true, price: pricesUpdated[b.symbol].price };
+    }
+    return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+})();
