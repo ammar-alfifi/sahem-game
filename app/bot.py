@@ -45,7 +45,8 @@ def _fmt_num(n: float) -> str:
 async def cmd_start(message: Message, bot: Bot):
     u = services.get_or_create_user(message.from_user.id, message.from_user.username)
     # رابط تحدٍّ مباشر: /start join_XXXXXX
-    args = (message.get_args() or "").strip()
+    parts = (message.text or "").split(maxsplit=1)
+    args = parts[1].strip() if len(parts) > 1 else ""
     from . import duels as duels_mod
     if args.lower().startswith("join_"):
         code = args[5:]
@@ -371,7 +372,8 @@ async def cmd_duel(message: Message):
 @router.message(Command("join"))
 async def cmd_join(message: Message):
     u = services.get_or_create_user(message.from_user.id, message.from_user.username)
-    code = (message.get_args() or "").strip()
+    parts = (message.text or "").split(maxsplit=1)
+    code = parts[1].strip() if len(parts) > 1 else ""
     if not code:
         await message.answer("اكتب الرمز هكذا: /join XXXXXX (من رسالة التحدي)")
         return
