@@ -62,11 +62,15 @@ def get_or_create_user(telegram_id: int, username: str | None = None) -> dict:
 
 
 def auth_from_initdata(init_data: str) -> dict | None:
-    """التحقق من initData الصادر من تيليجرام (HMAC وفق مواصفة Telegram Web Apps)."""
+    """التحقق من initData الصادر من تيليجرام (HMAC وفق مواصفة Telegram Web Apps).
+
+    مواصفة 2024+: يُستثنى من سلسلة التحقق الحقلان `hash` و`signature` معاً.
+    """
     try:
         pairs = [kv.split("=", 1) for kv in init_data.split("&") if kv]
         data = dict(pairs)
         received_hash = data.pop("hash", None)
+        data.pop("signature", None)  # حقول جديدة لا تدخل في حساب السلسلة
         if not received_hash:
             return None
         data_check = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
