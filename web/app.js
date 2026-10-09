@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════
-   سهم — منطق التطبيق المصغّر (v2.3)
+   سهم — منطق التطبيق المصغّر (v2.5)
    🎮 يدعم المعاينة خارج تيليجرام عبر ?mock=1
    ═══════════════════════════════════════════ */
+const APP_VER = '2.5';
 
 const tg = window.Telegram?.WebApp;
 const QS = new URLSearchParams(location.search);
@@ -30,6 +31,7 @@ function haptic(kind = 'light') {
 /* ─── أدوات ─── */
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+try { $('ver-chip').textContent = 'v' + APP_VER; } catch {}  // طابع النسخة — لمطابقة نسخة الهاتف مع المنشورة
 const fmt = (n, d = 2) => (n === null || n === undefined || isNaN(n)) ? '—'
   : Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
 const fmt0 = (n) => fmt(n, 0);

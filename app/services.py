@@ -636,7 +636,8 @@ def get_arcade_step(round_id: int, user_id: int) -> dict | None:
         if not st or st["user_id"] != user_id:
             return None
     candles = market_data.get_candles(st["symbol"], st["start_ts"], st["end_ts"])
-    if len(candles) < ARCADE_MIN_SESSION:
+    min_needed = ARCADE_QUICK_SESSION[0] if (st.get("kind") or "solo") == "solo" and st["session_len"] <= ARCADE_QUICK_SESSION[1] else ARCADE_MIN_SESSION
+    if len(candles) < min_needed:
         return None
     step_index = _step_index(st, len(candles))
     candle = candles[step_index]
