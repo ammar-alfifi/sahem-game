@@ -151,9 +151,11 @@ async def root():
     return {"name": "سهم API", "docs": "/docs", "app": "/app/"}
 
 
+BUILD_STAMP = "ui-v3"
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "time": services._now_iso()}
+    return {"status": "ok", "build": BUILD_STAMP, "time": services._now_iso()}
 
 
 # ---------- API التطبيق المصغّر ----------
