@@ -40,6 +40,7 @@ def _fmt_num(n: float) -> str:
     return f"{n:,.2f}"
 
 
+@router.message(CommandStart())
 async def cmd_start(message: Message, bot: Bot):
     u = services.get_or_create_user(message.from_user.id, message.from_user.username)
     text = (
