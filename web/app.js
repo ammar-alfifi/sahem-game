@@ -81,16 +81,42 @@ async function auth() {
     TOKEN = 'mock:1';
     return true;
   }
-  if (!IS_TG) return false;
+  if (!IS_TG) {
+    reportGate('no-initData');
+    return false;
+  }
   try {
     const d = await fetch(API + '/api/auth', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData: tg.initData }),
-    }).then(r => { if (!r.ok) throw 0; return r.json(); });
+    }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
     TOKEN = d.token;
     USER = d.user;
     return true;
-  } catch { return false; }
+  } catch (e) {
+    reportGate('auth-fail: ' + (e && e.message ? e.message : e));
+    return false;
+  }
+}
+
+/* إبلاغ الخادم لمشكلة تشخيص البوابة */
+function reportGate(reason) {
+  try {
+    fetch(API + '/api/appdiag', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reason,
+        hasTg: !!tg,
+        initDataLen: (tg?.initData || '').length,
+        unsafeUser: tg?.initDataUnsafe?.user?.id || null,
+        platform: tg?.platform || null,
+        url: location.href.slice(0, 200),
+        ua: navigator.userAgent.slice(0, 150),
+      }),
+    }).catch(() => {});
+  } catch {}
+  const dbg = $('gate-debug');
+  if (dbg) dbg.textContent = 'تشخيص: ' + reason + ' • initData: ' + ((tg?.initData || '').length) + ' حرفاً';
 }
 
 /* ─── الهياكل العظمية ─── */

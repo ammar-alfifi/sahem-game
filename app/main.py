@@ -137,7 +137,8 @@ async def telegram_webhook(request: Request, background: BackgroundTasks):
 
 import collections as _collections
 import traceback as _traceback
-_DIAG = {"errors": _collections.deque(maxlen=8), "updates": _collections.deque(maxlen=15)}
+_DIAG = {"errors": _collections.deque(maxlen=8), "updates": _collections.deque(maxlen=15),
+         "gate": _collections.deque(maxlen=10)}
 
 
 async def _process_update(payload: dict):
@@ -167,7 +168,23 @@ async def diag(x_admin: Optional[str] = Header(None)):
         "dp_attached": _dp_holder["dp"] is not None,
         "updates": list(_DIAG["updates"]),
         "errors": list(_DIAG["errors"]),
+        "gate": list(_DIAG["gate"]),
     }
+
+
+@app.post("/api/appdiag")
+async def app_diag(data: dict):
+    _DIAG["gate"].append({
+        "t": services._now_iso(),
+        "reason": str(data.get("reason", ""))[:200],
+        "hasTg": data.get("hasTg"),
+        "initDataLen": data.get("initDataLen"),
+        "unsafeUser": data.get("unsafeUser"),
+        "platform": data.get("platform"),
+        "url": str(data.get("url", ""))[:200],
+        "ua": str(data.get("ua", ""))[:150],
+    })
+    return {"ok": True}
 
 
 @app.get("/")
