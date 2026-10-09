@@ -5,20 +5,27 @@ import os
 
 
 def get_webapp_url() -> str | None:
-    """رابط التطبيق المصغّر — يجب أن يكون HTTPS (متطلبات تيليجرام)."""
-    url = os.getenv("WEBAPP_URL") or os.getenv("RENDER_EXTERNAL_URL")
+    """رابط التطبيق المصغّر — HTTPS (متطلبات تيليجرام).
+
+    الأولوية:
+      1. WEBAPP_URL_OVERRIDE — تجاوز صريح (مثال: نطاق Cloudflare Pages)
+      2. خادم Render نفسه (RENDER_EXTERNAL_URL/app/) — موثوق وعديم الكاش
+      3. WEBAPP_URL — ملاذ أخير (يُستخدم في التشغيل المحلي فقط)
+    """
+    url = (os.getenv("WEBAPP_URL_OVERRIDE")
+           or os.getenv("RENDER_EXTERNAL_URL")
+           or os.getenv("WEBAPP_URL"))
     if url:
         if not url.startswith("http"):
             url = "https://" + url
         path = url.rstrip("/")
-        # لا تُلحق /app/ إذا كانت موجودة أصلاً في الرابط
         if not path.endswith("/app"):
             path += "/app"
         return path + "/?v=" + str(_BUILD)
     return None
 
 
-_BUILD = 3  # ارفع الرقم عند أي تحديث كبير للواجهة — يفرّغ كاش تيليجرام
+_BUILD = 4  # ارفع الرقم عند أي تحديث كبير للواجهة — يفرّغ كاش تيليجرام
 
 
 def get_bot_token() -> str:

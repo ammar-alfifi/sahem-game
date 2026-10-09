@@ -151,7 +151,7 @@ async def root():
     return {"name": "سهم API", "docs": "/docs", "app": "/app/"}
 
 
-BUILD_STAMP = "ui-v3"
+BUILD_STAMP = "ui-v4"
 
 @app.get("/health")
 async def health():
