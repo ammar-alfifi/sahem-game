@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: sahem-game
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false      # يُوضع من لوحة Render
+      - key: WEBAPP_URL
+        sync: false      # رابط Cloudflare Pages للواجهة المصغّرة (اختياري)
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.9"
