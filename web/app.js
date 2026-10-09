@@ -5,7 +5,10 @@ tg?.expand();
 tg?.setHeaderColor('#0d1117');
 tg?.setBackgroundColor('#0d1117');
 
-const API = location.origin;
+// خادم API: نفس الأصل افتراضياً؛ عند الاستضافة على Cloudflare Pages نوجّه النداءات لخادم Render
+// (يمكن تخصيصه يدوياً بفتح الرابط مع ?api=https://server-url)
+const API = new URLSearchParams(location.search).get('api')
+  || (location.hostname.endsWith('.pages.dev') ? 'https://sahem-game.onrender.com' : location.origin);
 let TOKEN = localStorage.getItem('sahem_token') || null;
 let USER = null;
 

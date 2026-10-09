@@ -10,7 +10,11 @@ def get_webapp_url() -> str | None:
     if url:
         if not url.startswith("http"):
             url = "https://" + url
-        return url.rstrip("/") + "/app/"
+        path = url.rstrip("/")
+        # لا تُلحق /app/ إذا كانت موجودة أصلاً في الرابط
+        if not path.endswith("/app"):
+            path += "/app"
+        return path + "/"
     return None
 
 
