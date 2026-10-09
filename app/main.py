@@ -50,9 +50,11 @@ async def job_resolve_predictions():
 
 async def job_resolve_duels():
     try:
-        n = duels_mod.resolve_due_duels()
+        n, events = duels_mod.resolve_due_duels()
         if n:
-            log.info(f"spawned {n} duels resolved")
+            log.info(f"duels resolved/expired: {n}")
+        for ev in events:
+            asyncio.create_task(duels_mod.notify_duel_event(ev))
     except Exception as e:
         log.warning(f"resolve_duels failed: {e}")
 
@@ -171,7 +173,7 @@ async def telegram_webhook(request: Request, background: BackgroundTasks):
         update = Update.model_validate(await request.json(), context={"bot": None})
     except Exception:
         raise HTTPException(400, "invalid update")
-    background.add_task(_process_update, update.dict())
+    background.add_task(_process_update, update.model_dump(by_alias=True))
     return {"ok": True}
 
 
@@ -182,9 +184,12 @@ _DIAG = {"errors": _collections.deque(maxlen=8), "updates": _collections.deque(m
 
 
 async def _process_update(payload: dict):
-    kind = "message" if payload.get("message") else ("callback" if payload.get("callback_query") else "other")
-    uid = ((payload.get("message") or {}).get("from") or {}).get("id")
-    txt = ((payload.get("message") or {}).get("text") or "")[:40]
+    msg = payload.get("message") or {}
+    upd_from = msg.get("from") or msg.get("from_user") or {}
+    cb = payload.get("callback_query") or {}
+    kind = "message" if payload.get("message") else ("callback" if cb else "other")
+    uid = upd_from.get("id") or ((cb.get("from") or cb.get("from_user") or {}).get("id"))
+    txt = (msg.get("text") or (cb.get("data") or ""))[:40]
     _DIAG["updates"].append(f"{kind} uid={uid} '{txt}'")
     bot = Bot(get_bot_token())
     dp = _get_dp()
@@ -359,7 +364,7 @@ async def api_arcade_finish(round_id: int, request: Request, authorization: Opti
         raise HTTPException(404, "الجولة غير موجودة")
     d = res.get("duel")
     if d and d.get("state") == "done":
-        asyncio.create_task(duels_mod.notify_opponent_story(d["duel"]["id"], uid, d["message"]))
+        asyncio.create_task(duels_mod.notify_duel_result(d["duel"]["id"]))
     return res
 
 
@@ -405,14 +410,24 @@ async def api_duel_play(duel_id: int, request: Request, authorization: Optional[
 
 
 # ---------- الدوري الأسبوعي (المرحلة 2) ----------
+def _auth_optional(request: Request, authorization: Optional[str]) -> Optional[int]:
+    try:
+        return _auth(request, authorization)
+    except HTTPException:
+        return None
+
+
 @app.get("/api/league")
-async def api_league():
+async def api_league(request: Request, authorization: Optional[str] = Header(None)):
+    uid = _auth_optional(request, authorization)
     ps, pe = league_mod.current_period()
     return {
         "period_start": ps,
         "period_end": pe,
         "countdown": league_mod.week_countdown(),
         "standings": league_mod.standings(ps, limit=10),
+        "me": league_mod.my_view(uid, ps),
+        "players": league_mod.players_count(ps),
         "prizes": [
             {"rank": 1, "coins": 50000, "xp": 500},
             {"rank": 2, "coins": 30000, "xp": 300},

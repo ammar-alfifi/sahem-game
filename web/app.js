@@ -614,6 +614,15 @@ function showResult(r) {
 const BOT_USER = 'Sahmgame_bot';
 let AMODE = 'solo';
 
+function timeLeftText(iso) {
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return '';
+  const left = t - Date.now();
+  if (left <= 0) return '';
+  const h = Math.floor(left / 3.6e6), m = Math.floor((left % 3.6e6) / 6e4);
+  return h >= 1 ? `متبقي ${h} س ${m} د` : `متبقي ${m} د`;
+}
+
 function setArcadeMode(mode) {
   AMODE = mode;
   document.querySelectorAll('#arcade-seg .seg-b').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
@@ -644,35 +653,48 @@ async function loadDuels() {
     el.innerHTML = `<div class="empty"><div class="em">⚔️</div><p>لا مبارزات بعد — أنشئ تحدّياً واقرعه لأصدقائك!</p></div>`;
     return;
   }
-  el.innerHTML = list.map(d => duelCard(d)).join('');
+  el.innerHTML = list.map(d => duelCard(d)).join('')
+    + `<button class="btn btn-ghost btn-sm duel-refresh">🔄 تحديث القائمة</button>`;
   wireDuelCard(el);
+  // عدّاد الخصم: إعادة تحميل لطيفة كل 30 ثانية إن كانت هناك مباراة «بانتظار الخصم»
+  duelAutoTimer && clearTimeout(duelAutoTimer);
+  if (list.some(d => d.status === 'active' && (d.challenger_excess == null) !== (d.opponent_excess == null))) {
+    duelAutoTimer = setTimeout(() => { if (AMODE === 'duel') loadDuels().catch(() => {}); }, 30000);
+  }
 }
+let duelAutoTimer = null;
 
 function duelCard(d) {
   const win = d.winner_id;
   const meCh = d.challenger_id === USER?.id;   // هويتي الداخلية
   const myExcess = meCh ? d.challenger_excess : d.opponent_excess;
+  const oppName = meCh ? d.opponent_name : d.challenger_name;
   const won = win && win === USER?.id;
   const lost = win && win !== USER?.id;
+  // من رأى المبارزة أنا لاعبها أم خليط طلب انضمام شخص؟ (لا — القائمة فقط مبارزاتي)
 
   let state = '', right = '', emoji = '⚔️';
   if (d.status === 'open') {
+    const left = timeLeftText(d.expires_at);
     emoji = '📣';
-    state = `<div class="duel-title">تحدي مفتوح بانتظار خصم</div>
+    state = `<div class="duel-title">تحدي مفتوح بانتظار خصم${left ? ` <span class="duel-timer">${left}</span>` : ''}</div>
       <div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم • من ${d.start_ts} إلى ${d.end_ts}</div>
       <div class="duel-share"><code>${d.code}</code>
-      <button class="btn btn-ghost btn-sm duel-copy" data-code="${d.code}">📋 نسخ الرمز</button></div>`;
+      <button class="btn btn-ghost btn-sm duel-copy" data-code="${d.code}">🔗 نسخ رابط الدعوة</button></div>`;
   } else if (d.status === 'expired') {
-    emoji = '⌛'; state = '<div class="duel-title">انتهت صلاحية التحدي</div>';
+    emoji = '⌛';
+    state = `<div class="duel-title">انتهت صلاحية التحدي</div>
+      <div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم</div>`;
   } else if (d.status === 'active') {
     if (myExcess != null) {
-      state = '<div class="duel-title">بانتظار الخصم يُنهي جولته…</div>';
+      state = `<div class="duel-title">بانتظار ${esc(oppName || 'الخصم')} يُنهي جولته…</div>
+        <div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم • متاح حتى ${d.expires_at.slice(0, 16).replace('T', ' ')}</div>`;
       right = `<div class="duel-side"><b class="mono ${myExcess >= 0 ? 'up' : 'down'}">${pct(myExcess)}</b><span class="duel-name">عائدك</span></div>`;
     } else {
-      state = '<div class="duel-title">جاهزة للعب!</div>';
+      state = `<div class="duel-title">جاهزة للعب! 🆚 ${esc(oppName || 'خصم')}</div>
+        <div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم • متاح حتى ${d.expires_at.slice(0, 16).replace('T', ' ')}</div>`;
       right = `<button class="btn btn-primary duel-btn duel-play" data-id="${d.id}">العب جولتك</button>`;
     }
-    state += `<div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم • متاح حتى ${d.expires_at.slice(0, 16).replace('T', ' ')}`;
   } else { // finished
     emoji = won ? '🏆' : lost ? '💀' : '🤝';
     const a = pct(d.challenger_excess ?? 0), b = pct(d.opponent_excess ?? 0);
@@ -713,6 +735,10 @@ async function createDuel() {
   btn.disabled = false; btn.textContent = '🎯 أنشئ تحدّياً وشاركه';
 }
 
+$('duel-list').addEventListener('click', (e) => {
+  if (e.target.closest('.duel-refresh')) { loadDuels().catch(() => {}); haptic('light'); }
+});
+
 async function joinDuel(code) {
   try {
     const res = await api('/api/duels/join', { method: 'POST', body: JSON.stringify({ code }) });
@@ -726,16 +752,25 @@ async function joinDuel(code) {
 async function loadLeague() {
   const lg = await api('/api/league').catch(() => null);
   if (!lg) return;
-  $('lg-countdown').textContent = '⏳ ' + lg.countdown;
+  $('lg-countdown').textContent = '⏳ ' + lg.countdown
+    + (lg.players ? ` • ${lg.players} لاعب` : '');
   const medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
   const top = (lg.standings || []).slice(0, 5);
   $('lg-top').innerHTML = top.length
     ? top.map(r => `<div class="lg-row${r.username === USER?.username ? ' me' : ''}">
         <span class="lg-rank">${medals[r.rank] || r.rank}</span>
         <span class="lg-name">${esc(r.username || 'لاعب')}</span>
-        <span class="lg-score">${r.score >= 0 ? '+' : ''}${fmt(r.score, 1)} نقطة</span>
+        <span class="lg-score">${r.score >= 0 ? '+' : ''}${fmt(r.score, 1)} نقطة
+          <small class="lg-meta">${r.rounds} جولة • ${r.pred_wins} توقّع</small></span>
       </div>`).join('')
     : '<div class="lg-row"><span class="lg-name">لا نتائج هذا الأسبوع بعد — العب جولة!</span></div>';
+  const me = $('lg-me');
+  const m = lg.me;
+  me.classList.toggle('hidden', !m || !m.rank);
+  if (m && m.rank) {
+    me.innerHTML = `<span>🧍 مركزك <b>${m.rank}</b></span>
+      <span class="lg-gap">${esc(m.gap_text || '')}</span>`;
+  }
   $('lg-prizes').innerHTML = (lg.prizes || [])
     .map(p => `<span style="margin-left:10px">🏅 ${p.rank}: ${fmt0(p.coins)} ◈ + ${p.xp} XP</span>`).join('');
 }

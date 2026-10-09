@@ -55,11 +55,14 @@ def create_duel(user_id: int) -> dict:
     """إنشاء مبارزة تحدٍّ: رمز مشاركة + نافذة تاريخية تُثبّت للطرفين."""
     conn = get_db()
     open_row = conn.execute(
-        "SELECT id FROM duels WHERE (challenger_id=? OR opponent_id=?) AND status IN ('open','active') LIMIT 1",
+        "SELECT id, status FROM duels WHERE (challenger_id=? OR opponent_id=?) AND status IN ('open','active') LIMIT 1",
         (user_id, user_id),
     ).fetchone()
     conn.close()
     if open_row:
+        # تحدٍّ open لم ينضم أحد إليه؟ أعِده بدل الخطأ — عادةً المستخدم فقد الرمز
+        if open_row["status"] == "open":
+            return {"ok": True, "duel": duel_view(_get(open_row["id"])), "note": "reused"}
         return {"ok": False, "error": "لديك مباراة قائمة بالفعل — أنهِها أولاً"}
 
     window = services._pick_random_window()
@@ -248,18 +251,27 @@ def list_duels(user_id: int) -> list[dict]:
     return [duel_view(dict(r)) for r in rows]
 
 
-def resolve_due_duels() -> int:
-    """مجدول: إسقاط التحديات المنتهية، أو إعلان فائزٍ وحيد اكتمل اسمه وزملاؤه لم ينهوا."""
+def resolve_due_duels() -> tuple[int, list[dict]]:
+    """مجدول: إسقاط التحديات المنتهية، أو إعلان فائزٍ وحيد اكتمل اسمه وزملاؤه لم ينهوا.
+    تعيد (عدد المعاملات، أحداث إشعار) — إشعارات البوت async يشغّلها المستدعي."""
     conn = get_db()
     now = _iso(_now())
     n = 0
+    events: list[dict] = []
 
     open_due = conn.execute(
-        "SELECT id FROM duels WHERE status='open' AND expires_at<=?", (now,)
+        "SELECT id, challenger_id FROM duels WHERE status='open' AND expires_at<=?", (now,)
     ).fetchall()
-    for (did,) in open_due:
+    for did, ch in open_due:
         conn.execute("UPDATE duels SET status='expired' WHERE id=?", (did,))
         n += 1
+        if ch:
+            events.append({
+                "type": "expired",
+                "duel_id": did,
+                "user_ids": [ch],
+                "reason": "لم ينضم أحد إلى تحدّيك خلال 24 ساعة — أنشئ تحدياً جديداً وشاركه مباشرة",
+            })
 
     active_due = conn.execute(
         "SELECT * FROM duels WHERE status='active' AND expires_at<=?", (now,)
@@ -277,21 +289,34 @@ def resolve_due_duels() -> int:
             continue  # النتائج مسجلة بالفعل — الحكم في record_duel_result
         if fin_c or fin_o:
             winner = r["challenger_id"] if fin_c else r["opponent_id"]
+            loser = r["opponent_id"] if fin_c else r["challenger_id"]
             conn.execute(
                 "UPDATE users SET coins_balance = coins_balance + ?, xp = xp + ? WHERE id=?",
                 (DUEL_COINS_WIN, DUEL_POINTS_WIN, winner),
             )
             conn.execute("UPDATE users SET level = 1 + (xp / 500) WHERE id=?", (winner,))
             conn.execute("UPDATE duels SET status='finished', winner_id=? WHERE id=?", (winner, r["id"]))
+            n += 1
+            events.append({
+                "type": "resolved",
+                "duel_id": r["id"],
+                "user_ids": [winner, loser],
+                "reason": "حُسمت بالانتهاء: أنهيتُ جولتي ولم يُكمل الخصم خلال الصلاحية",
+            })
         else:
             conn.execute("UPDATE duels SET status='expired' WHERE id=?", (r["id"],))
-        n += 1
+            n += 1
+            events.append({
+                "type": "expired",
+                "duel_id": r["id"],
+                "user_ids": [r["challenger_id"], r["opponent_id"]],
+                "reason": "لم يُنه أحدكما جولته خلال 24 ساعة — المبارزة سُقطت بلا مكافآت",
+            })
     conn.commit()
     conn.close()
-    return n
+    return n, events
 
 
-# ---------- إشعارات بوت (async — تُستدعى من مسارات FastAPI ذات context async) ----------
 async def notify_challenger_joined(duel_id: int):
     """رسالة للمُتحدّي: الخصم قبل الحدي."""
     try:
@@ -308,9 +333,10 @@ async def notify_challenger_joined(duel_id: int):
         try:
             await bot.send_message(
                 tg[0],
-                f"⚔️ الخصم قبل التحدي!\n"
+                f"⚔️ الخصم قبل التحدي وستنطلق المعركة!\n"
                 f"📊 {symbol_name(d['symbol'])} • {d['session_len']} يوم تاريخي\n"
-                f"🗓️ من {d['start_ts']} إلى {d['end_ts']}\n\n"
+                f"🗓️ نافذة واحدة للطرفين — الفائز أعلى عائد زائد\n\n"
+                f"👤 الخصم: {(_player_name(d['opponent_id']))}\n\n"
                 "افتح التطبيق → الأركيد → «مبارزة» لتلعب جولتك (فرصة واحدة!).",
             )
         finally:
@@ -319,24 +345,84 @@ async def notify_challenger_joined(duel_id: int):
         pass
 
 
-async def notify_opponent_story(duel_id: int, me_user_id: int, message: str):
-    """إعلان نتيجة المبارزة للطرف الآخر عندما تُحسم."""
+# ---------- إشعارات بوت (async — تُستدعى من مسارات FastAPI ذات context async) ----------
+def _duel_outcome_text(d: dict, user_id: int) -> str:
+    """نص ملخّص محايد لنتيجة المبارزة من منظور side محدد."""
+    won = d["winner_id"] == user_id
+    tie = d["winner_id"] is None
+    mine = d["challenger_excess"] if user_id == d["challenger_id"] else d["opponent_excess"]
+    if tie:
+        head = "🤝 انتهت المبارزة بالتعادل! +75 نقطة لكل طرف"
+    elif won:
+        head = "🏆 فزت بالمبارزة! +120 نقطة و +5,000 عملة"
+    else:
+        head = "💀 خسرت المبارزة — +30 نقطة مشاركة، نمَضي في التالية"
+    return (
+        f"{head}\n"
+        f"📊 {symbol_name(d['symbol'])} • {d['session_len']} يوم تاريخي\n"
+        f"🅰️ {d['challenger_name']}: {(d['challenger_excess'] or 0):+.2f}%\n"
+        f"🅱️ {(d['opponent_name'] or 'خصم')}: {(d['opponent_excess'] or 0):+.2f}%\n"
+        f"🪙 عائدك الزائد: {(mine or 0):+.2f}%"
+    )
+
+
+async def notify_duel_result(duel_id: int):
+    """حُسمت المبارزة بإكمال الطرفين — ملخّص لكل طرف بمنظوره."""
     try:
         d = _get(duel_id)
-        if not d:
+        if not d or d["status"] != "finished":
             return
-        other = d["opponent_id"] if me_user_id == d["challenger_id"] else d["challenger_id"]
-        from aiogram import Bot
-        conn = get_db()
-        tg = conn.execute("SELECT telegram_id FROM users WHERE id=?", (other,)).fetchone()
-        conn.close()
-        if not tg:
-            return
-        bot = Bot(get_bot_token())
-        try:
-            name = _player_name(me_user_id)
-            await bot.send_message(tg, f"⚔️ {name} أنهى مباراتكم\n{message}")
-        finally:
-            await bot.session.close()
+        await _send_to_users(
+            [d["challenger_id"], d["opponent_id"]],
+            lambda uid: "⚔️ حُسمت المبارزة!\n" + _duel_outcome_text(d, uid),
+        )
     except Exception:
         pass
+
+
+async def notify_duel_event(event: dict):
+    """أحداث المجدول: 'resolved' (فوز بحكم الانتهاء) أو 'expired' (سقوط دون مكافآت)."""
+    try:
+        ids = [u for u in event.get("user_ids", []) if u]
+        if not ids:
+            return
+        reason = str(event.get("reason", "")).strip()
+
+        if event.get("type") == "resolved":
+            d = _get(event.get("duel_id"))
+            if d:
+                def text_for(uid, _d=d):
+                    if uid == _d["winner_id"]:
+                        return ("🏆 فزت بالمبارزة بحكم الانتهاء! +120 نقطة و +5,000 عملة\n"
+                                f"📊 {symbol_name(_d['symbol'])} • {_d['session_len']} يوم تاريخي")
+                    return ("⌛ انتهت المبارزة — لم تُنهِ جولتك خلال 24 ساعة فخسرتها بلا نقاط\n"
+                            f"📊 {symbol_name(_d['symbol'])} • {_d['session_len']} يوم تاريخي\n"
+                            "💡 الخصم أنجز جولته وأنت لا — العب جولتك أول ما يقبل الخصم التحدي")
+                await _send_to_users(ids, text_for)
+        elif event.get("type") == "expired":
+            await _send_to_users(ids, lambda uid: f"⌛ انتهت صلاحية المبارزة\n{reason}")
+    except Exception:
+        pass
+
+
+async def _send_to_users(user_ids: list[int], text_for):
+    """مساعد: إرسال رسالة بمنظور كل مستخدم (يقبل دالة أو نصاً ثابتاً)."""
+    from aiogram import Bot
+    conn = get_db()
+    rows = conn.execute(
+        f"SELECT id, telegram_id FROM users WHERE id IN ({','.join('?' * len(user_ids))})",
+        user_ids,
+    ).fetchall()
+    conn.close()
+    bot = Bot(get_bot_token())
+    try:
+        for uid, tg in rows:
+            if not tg:
+                continue
+            try:
+                text = text_for(uid) if callable(text_for) else text_for
+                await bot.send_message(tg, text)
+            except Exception:
+                pass
+    finally:
+        await bot.session.close()

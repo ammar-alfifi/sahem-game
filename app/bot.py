@@ -395,11 +395,20 @@ async def cmd_join(message: Message):
 @router.message(Command("league"))
 async def cmd_league(message: Message):
     from . import league as league_mod
+    u = services.get_or_create_user(message.from_user.id, message.from_user.username)
     rows = league_mod.standings(limit=10)
+    me = league_mod.my_view(u["id"])
     lines = [
         "🥇 **الدوري الأسبوعي**",
-        f"⏳ ينقضي خلال: {league_mod.week_countdown()}\n",
+        f"⏳ ينقضي خلال: {league_mod.week_countdown()}",
+        f"♟️ المتسابقون: {league_mod.players_count()}",
     ]
+    if me:
+        if me["rank"]:
+            lines.append(f"🧍 مركزك: {me['rank']} بـ {me['score']:+,.1f} نقطة — {me.get('gap_text', '')}")
+        else:
+            lines.append("🧍 مركزك: خارج الترتيب — سجّل جولة أركيد لتدخل!")
+    lines.append("")
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     if not rows:
         lines.append("لا نتائج بعد — افتح التطبيق وابدأ جولة أركيد!")
@@ -411,4 +420,6 @@ async def cmd_league(message: Message):
             f"({r['rounds']} جولة • {r['pred_wins']} توقع)"
         )
     lines.append("\n🎁 جوائز الجمعة: 50,000+30,000+20,000… عملة وهمية")
+    if me and me.get("hint"):
+        lines.append(f"💡 {me['hint']}")
     await message.answer("\n".join(lines), parse_mode="Markdown")

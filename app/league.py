@@ -35,13 +35,16 @@ def current_period(now: datetime | None = None) -> tuple[str, str]:
 
 
 def _score_rows(period_start: str):
+    """صفوف النقاط. المقارنة الزمنية عبر julianday — دقيقة عبر صيغ ISO المختلطة
+    (played_at بصيغة SQLite UTC، والفترة بصيغة ISO بتوقيت الرياض)."""
     conn = get_db()
     rows = conn.execute(
         """SELECT u.id, u.username,
-                  COALESCE(SUM(CASE WHEN r.played_at >= ? THEN COALESCE(r.excess_return, 0) END), 0) AS excess,
-                  SUM(CASE WHEN r.played_at >= ? THEN 1 ELSE 0 END) AS rounds,
+                  COALESCE(SUM(CASE WHEN julianday(r.played_at) >= julianday(?) THEN COALESCE(r.excess_return, 0) END), 0) AS excess,
+                  SUM(CASE WHEN julianday(r.played_at) >= julianday(?) THEN 1 ELSE 0 END) AS rounds,
                   (SELECT COUNT(*) FROM predictions p
-                     WHERE p.user_id = u.id AND p.result='win' AND p.predicted_at >= ?) AS wins
+                     WHERE p.user_id = u.id AND p.result='win'
+                       AND julianday(p.predicted_at) >= julianday(?)) AS wins
            FROM users u
            LEFT JOIN arcade_rounds r ON r.user_id = u.id
            GROUP BY u.id
@@ -66,20 +69,74 @@ def standings(period_start: str | None = None, limit: int = 20) -> list[dict]:
             "score": round(r["excess"] + 2 * r["wins"], 2),
         })
     out.sort(key=lambda x: -x["score"])
-    for i, r in enumerate(out[:limit], start=1):
+    for i, r in enumerate(out, start=1):
         r["rank"] = i
-    return out[:limit]
+    if limit:
+        out = out[:limit]
+    return out
+
+
+def _ar_plural(n: int, one: str, two: str, few: str, many: str) -> str:
+    """صيغة العدّ العربي: 1 / 2 / 3-10 / 11+."""
+    n = abs(int(n))
+    if n == 1:
+        return one
+    if n == 2:
+        return two
+    if 3 <= n <= 10:
+        return few
+    return many
 
 
 def week_countdown() -> str:
-    """متبقٍ للإغلاق بصيغة نصية (يوم/ساعة)."""
+    """متبقٍ للإغلاق بصيغة نصية مطابقة للجمع (يوم/ساعة/دقيقة)."""
     ps, pe = current_period()
     remain = (datetime.fromisoformat(pe) - datetime.now(RIYADH)).total_seconds()
     if remain <= 0:
         return "أوشكت على الختام"
     d, rem = divmod(int(remain), 86400)
-    h = rem // 3600
-    return f"{d} يوم و {h} ساعة"
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    parts = []
+    if d:
+        parts.append(f"{d} {_ar_plural(d, 'يوم', 'يومان', 'أيام', 'يومًا')}")
+    if h:
+        parts.append(f"{h} {_ar_plural(h, 'ساعة', 'ساعتان', 'ساعات', 'ساعةً')}")
+    if not parts:
+        parts.append(f"{m} {_ar_plural(m, 'دقيقة', 'دقيقتان', 'دقائق', 'دقيقةً')}")
+    return " و ".join(parts)
+
+
+def players_count(period_start: str | None = None) -> int:
+    """عدد اللاعبين المشاركين في الفترة (جولة أركيد أو توقع)."""
+    return len(_score_rows(period_start or current_period()[0]))
+
+
+def my_view(user_id: int | None, period_start: str | None = None) -> dict | None:
+    """مركزي هذا الأسبوع + الفجوة إلى المركز الأدنى المنافس (None خارج لوحة 10)."""
+    if not user_id:
+        return None
+    ps = period_start or current_period()[0]
+    rows = standings(ps, limit=None)
+    for i, r in enumerate(rows, start=1):
+        if r["user_id"] == user_id:
+            view = {
+                "rank": i,
+                "score": r["score"],
+                "rounds": r["rounds"],
+                "pred_wins": r["pred_wins"],
+            }
+            if i == 1:
+                view["gap_text"] = "أنت في القمة 🏆"
+            else:
+                next_row = rows[i - 2]
+                gap = next_row["score"] - r["score"]
+                view["gap_text"] = f"فجوة {gap:+.1f} نقطة عن «{(next_row['username'] or 'لاعب')}»"
+            if i > 10 and r["rounds"] < MIN_ROUNDS_FOR_PRIZE:
+                view["hint"] = f"أكمل {MIN_ROUNDS_FOR_PRIZE - r['rounds']} جولات أخرى لتصبح مؤهلاً للجائزة"
+            return view
+    return {"rank": None, "score": 0, "rounds": 0, "pred_wins": 0,
+            "hint": "سجّل أول جولة أركيد هذا الأسبوع لتدخل الترتيب"}
 
 
 def last_champion(period_start: str) -> dict | None:

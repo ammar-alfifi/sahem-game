@@ -34,6 +34,14 @@
     {
       id: 4, code: 'MM2X9B', symbol: 'NVDA', symbol_name: 'NVIDIA',
       start_ts: '2020-06-11', end_ts: '2020-07-21', session_len: 28,
+      status: 'active', challenger_id: 9, challenger_name: 'المتحسّب',
+      opponent_id: 1, opponent_name: 'لاعب تجريبي',
+      challenger_excess: 3.9, opponent_excess: null, winner_id: null,
+      expires_at: new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 19),
+    },
+    {
+      id: 3, code: 'MM2X9B', symbol: 'NVDA', symbol_name: 'NVIDIA',
+      start_ts: '2020-06-11', end_ts: '2020-07-21', session_len: 28,
       status: 'finished', challenger_id: 9, challenger_name: 'المتحسّب',
       opponent_id: 1, opponent_name: 'لاعب تجريبي',
       challenger_excess: 4.2, opponent_excess: 11.8, winner_id: 1,
@@ -119,13 +127,15 @@
     /* ─── الدوري الأسبوعي ─── */
     '/api/league': () => ({
       period_start: '2026-10-02T00:00:00+03:00', period_end: '2026-10-09T00:00:00+03:00',
-      countdown: '2 يوم و 5 ساعة',
+      countdown: '3 أيام و 5 ساعات',
+      players: 14,
       standings: [
         { rank: 1, username: 'المضارب', excess_sum: 24.5, rounds: 8, pred_wins: 4, score: 32.5 },
         { rank: 2, username: 'لاعب تجريبي', excess_sum: 18.2, rounds: 6, pred_wins: 2, score: 22.2 },
         { rank: 3, username: 'الصاعد', excess_sum: 9.7, rounds: 5, pred_wins: 1, score: 11.7 },
         { rank: 4, username: 'قنديل', excess_sum: 4.2, rounds: 3, pred_wins: 0, score: 4.2 },
       ],
+      me: { rank: 2, score: 22.2, rounds: 6, pred_wins: 2, gap_text: 'فجوة +10.3 نقطة عن «المضارب»' },
       prizes: [
         { rank: 1, coins: 50000, xp: 500 }, { rank: 2, coins: 30000, xp: 300 },
         { rank: 3, coins: 20000, xp: 200 }, { rank: '4-10', coins: 10000, xp: 100 },
