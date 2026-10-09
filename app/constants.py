@@ -6,25 +6,37 @@ FEE_RATE = 0.001
 STARTING_CAPITAL = 100_000
 
 # السوق السعودي — الأسهم المرشّحة (رموز Yahoo بلاحقة .SR)
+# ملاحظة: راجع الأسماء مع رموز تداول الرسمية عند التعديل (بعض الأسماء القديمة كانت غير مطابقة).
 TADAWUL_SYMBOLS = {
     "2222.SR": "أرامكو السعودية",
     "1120.SR": "مصرف الراجحي",
     "2010.SR": "سابك",
     "7010.SR": "stc",
-    "1180.SR": "بنك الإنماء",
+    "1180.SR": "مصرف الإنماء",
     "1010.SR": "بنك الرياض",
-    "1050.SR": "بنك البلاد",
-    "1150.SR": "الإنماء للتمويل الأهلي",
+    "1050.SR": "البنك السعودي الفرنسي",
+    "1150.SR": "بنك البلاد",
     "2280.SR": "المراعي",
-    "6004.SR": "شركة الغذائية",
+    "6004.SR": "الشركة الغذائية",
     "4190.SR": "بن داود",
-    "2380.SR": "بترو ربغ",
+    "2380.SR": "بترو رابغ",
     "2270.SR": "سدافكو",
     "4321.SR": "شركة الإتصالات البحرية",
 }
 
-# الأمريكي — أشهر الاسماء
-US_SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "NFLX", "AMD", "JPM"]
+# الأمريكي — أشهر الأسماء مع أسمائها الكاملة
+US_SYMBOLS = {
+    "AAPL": "أبل",
+    "MSFT": "مايكروسوفت",
+    "NVDA": "إنفيديا",
+    "TSLA": "تسلا",
+    "AMZN": "أمازون",
+    "GOOGL": "ألفابت",
+    "META": "ميتا",
+    "NFLX": "نتفليكس",
+    "AMD": "إيه إم دي",
+    "JPM": "جيه بي مورغان",
+}
 
 # الكريبتو — أزواج Yahoo
 CRYPTO_SYMBOLS = {
@@ -38,10 +50,20 @@ CRYPTO_SYMBOLS = {
 ALL_SYMBOLS = {}
 for s, n in TADAWUL_SYMBOLS.items():
     ALL_SYMBOLS[s] = {"name": n, "market": "SA"}
-for s in US_SYMBOLS:
-    ALL_SYMBOLS[s] = {"name": s, "market": "US"}
+for s, n in US_SYMBOLS.items():
+    ALL_SYMBOLS[s] = {"name": n, "market": "US"}
 for s, n in CRYPTO_SYMBOLS.items():
     ALL_SYMBOLS[s] = {"name": n, "market": "CRYPTO"}
+
+
+# مراجع السوق (benchmark) لحساب «العائد الزائد» — تُخزَّن شموعها في نفس جدول candles.
+# كل سوق يُقاس بمرجعه، فلا يُقاس سهم أمريكي بمرجع سعودي.
+BENCHMARKS = {
+    "SA": ("2222.SR", "أرامكو السعودية"),
+    "US": ("^GSPC", "مؤشر S&P 500"),
+    "CRYPTO": ("BTC-USD", "بيتكوين"),
+}
+BENCHMARK_SYMBOLS = {sym for sym, _ in BENCHMARKS.values()}
 
 
 def market_of(symbol: str) -> str:
@@ -74,12 +96,11 @@ def points_for_rank(rank: str, days: int) -> int:
 
 
 def bonus_coins_for_round(final_value: float, capital: float) -> int:
-    """مكافأة عملات وهمية حسب أداء الجولة (موجبة فقط)."""
+    """مكافأة عملات وهمية حسب أداء الجولة (موجبة فقط).
+
+    القاعدة: كل 1% ربح = 1,000 عملة (أي 1% من رأس المال = العملة المقابلة لربحها).
+    """
     gain = final_value - capital
     if gain <= 0:
         return 0
-    return int(gain / 100)  # كل 1% ربح = ~1000 عملة + عملات بسيطة للمكاسب الصغيرة
-
-
-def clamp(value, lo, hi):
-    return max(lo, min(hi, value))
+    return int(gain)

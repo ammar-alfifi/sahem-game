@@ -75,6 +75,17 @@
     '/api/trade': () => ({ ok: true, price: 99, cash, holdings: 1 }),
     '/api/portfolio': () => ({
       balance: cash, level: 3, xp: 1140,
+      daily_streak: 3, pred_streak: 2, daily_claimed_today: false, daily_next_coins: 1000,
+      badges: [
+        { id: 'first_trade', emoji: '🥇', name: 'أول صفقة', desc: '', earned: true },
+        { id: 'first_round', emoji: '🎮', name: 'أول جولة', desc: '', earned: true },
+        { id: 'analyst', emoji: '🎯', name: 'قارئ سوق', desc: '', earned: true },
+        { id: 'streak5', emoji: '🔥', name: 'سلسلة 5 إصابات', desc: '', earned: false },
+        { id: 'daily7', emoji: '📅', name: 'أسبوع حضور', desc: '', earned: false },
+        { id: 'legend', emoji: '🏆', name: 'أسطورة جولة', desc: '', earned: false },
+        { id: 'duelist', emoji: '⚔️', name: 'فاتح مبارزات', desc: '', earned: true },
+        { id: 'league_champ', emoji: '👑', name: 'بطل الدوري', desc: '', earned: false },
+      ],
       positions: Object.entries(holdings).filter(([, q]) => q > 0).map(([s, q]) => {
         const p = pricesUpdated[s];
         return { symbol: s, name: p.name, market: p.market, quantity: q, avg_cost: p.price * 0.94, current_price: p.price, market_value: q * p.price, pnl_pct: (1 / 0.94 - 1) * 100 };
@@ -85,13 +96,40 @@
       resolves_at: new Date(Date.now() + 5 * 3600e3).toISOString(), points: 0,
     }],
     '/api/predict': { ok: true },
-    '/api/leaderboard': [
-      { username: 'أبو سهم', level: 7, weekly_value: 512000, rounds: 12 },
-      { username: 'المضارب', level: 5, weekly_value: 442000, rounds: 9 },
-      { username: 'مهم sandbag', level: 3, weekly_value: 318000, rounds: 6 },
-      { username: 'قنديل الصرة', level: 2, weekly_value: 250000, rounds: 4 },
-      { username: 'الصاعد', level: 2, weekly_value: 180000, rounds: 3 },
+    '/api/predictions/history': () => [
+      { symbol: 'AAPL', direction: 'up', result: 'win', points: 2.2, resolve_price: 180, entry_price: 176 },
+      { symbol: 'BTC-USD', direction: 'flat', result: 'lose', points: 0, resolve_price: 69000, entry_price: 68240 },
     ],
+    '/api/daily': () => ({ ok: true, coins: 750, streak: 3 }),
+    '/api/leaderboard': [
+      { user_id: 9, username: 'أبو سهم', score: 41.2, weekly_value: 41.2, rounds: 12, pred_wins: 5, champion: true },
+      { user_id: 3, username: 'المضارب', score: 32.6, weekly_value: 32.6, rounds: 9, pred_wins: 2, champion: false },
+      { user_id: 4, username: 'متداول مبتدئ', score: 22.1, weekly_value: 22.1, rounds: 6, pred_wins: 1, champion: false },
+      { user_id: 5, username: 'قنديل', score: 15.4, weekly_value: 15.4, rounds: 4, pred_wins: 0, champion: false },
+      { user_id: 1, username: 'لاعب تجريبي', score: 9.8, weekly_value: 9.8, rounds: 3, pred_wins: 1, champion: false },
+    ],
+    '/api/quests': () => ({
+      daily: [
+        { key: 'round_today', emoji: '🎮', title: 'أنهِ جولة أركيد اليوم', target: 1, current: 0, done: false, reward: 400 },
+        { key: 'preds_today', emoji: '🎯', title: 'ضع توقّعين اليوم', target: 2, current: 1, done: false, reward: 400 },
+        { key: 'daily_claimed', emoji: '🎁', title: 'استلم مكافأة الحضور', target: 1, current: 1, done: true, reward: 300 },
+      ],
+      weekly: [
+        { key: 'rounds_week', emoji: '📈', title: 'أنهِ 5 جولات أركيد', target: 5, current: 3, done: false, reward: 2000 },
+        { key: 'wins_week', emoji: '✅', title: '3 توقعات صحيحة', target: 3, current: 3, done: true, reward: 2000 },
+        { key: 'duel_win_week', emoji: '⚔️', title: 'فُز بمبارزة', target: 1, current: 0, done: false, reward: 1500 },
+      ],
+    }),
+    '/api/arcade/active': () => null,
+    '/api/arcade/id/resume': () => {
+      if (!arcade) return {};
+      const hist = Array.from({ length: Math.max(1, arcade.step) }, (_, i) => ({
+        ts: '2021-03-0' + ((i % 9) + 1), open: arcade.price * 0.98, close: arcade.price,
+        high: arcade.price * 1.01, low: arcade.price * 0.97, volume: 2e6,
+      }));
+      return { round: { round_id: arcade.round_id, symbol: arcade.symbol, name: arcade.name, capital: 100000, session_len: 40, step_seconds: 4, start_ts: '2021-03-02', kind: 'solo' },
+        history: hist, step: hist.length - 1, cash: arcade.cash, holdings: arcade.holdings, avg_cost: arcade.avg };
+    },
     '/api/arcade/start': () => {
       const sym = 'NVDA', price = 95;
       arcade = { round_id: 77, symbol: sym, name: 'NVIDIA', capital: 100000, step_seconds: 4, started: Date.now(), cash: 100000, holdings: 0, avg: 0, step: 0, price };
@@ -130,10 +168,10 @@
       countdown: '3 أيام و 5 ساعات',
       players: 14,
       standings: [
-        { rank: 1, username: 'المضارب', excess_sum: 24.5, rounds: 8, pred_wins: 4, score: 32.5 },
-        { rank: 2, username: 'لاعب تجريبي', excess_sum: 18.2, rounds: 6, pred_wins: 2, score: 22.2 },
-        { rank: 3, username: 'الصاعد', excess_sum: 9.7, rounds: 5, pred_wins: 1, score: 11.7 },
-        { rank: 4, username: 'قنديل', excess_sum: 4.2, rounds: 3, pred_wins: 0, score: 4.2 },
+        { user_id: 9, rank: 1, username: 'المضارب', excess_sum: 24.5, rounds: 8, pred_wins: 4, score: 32.5 },
+        { user_id: 1, rank: 2, username: 'لاعب تجريبي', excess_sum: 18.2, rounds: 6, pred_wins: 2, score: 22.2 },
+        { user_id: 8, rank: 3, username: 'الصاعد', excess_sum: 9.7, rounds: 5, pred_wins: 1, score: 11.7 },
+        { user_id: 7, rank: 4, username: 'قنديل', excess_sum: 4.2, rounds: 3, pred_wins: 0, score: 4.2 },
       ],
       me: { rank: 2, score: 22.2, rounds: 6, pred_wins: 2, gap_text: 'فجوة +10.3 نقطة عن «المضارب»' },
       champion: { username: 'أبو سهم', score: 41.8 },

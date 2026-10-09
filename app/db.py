@@ -4,6 +4,7 @@
 """
 import sqlite3
 import os
+from contextlib import contextmanager
 
 DB_PATH = os.getenv("DB_PATH", "sahem.db")
 
@@ -17,6 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
   coins_balance REAL NOT NULL DEFAULT 100000,
   level INTEGER NOT NULL DEFAULT 1,
   xp INTEGER NOT NULL DEFAULT 0,
+  last_daily TEXT,
+  daily_streak INTEGER NOT NULL DEFAULT 0,
+  pred_streak INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -58,7 +62,9 @@ CREATE TABLE IF NOT EXISTS predictions (
   predicted_at TEXT NOT NULL DEFAULT (datetime('now')),
   resolves_at TEXT NOT NULL,
   result TEXT,                      -- win / lose / pending
-  points REAL DEFAULT 0
+  points REAL DEFAULT 0,
+  entry_price REAL,
+  resolve_price REAL
 );
 
 CREATE TABLE IF NOT EXISTS duels (
@@ -118,47 +124,73 @@ CREATE TABLE IF NOT EXISTS transactions (
   executed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS leagues (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  scope TEXT NOT NULL,
-  period_start TEXT NOT NULL,
-  period_end TEXT NOT NULL
-);
-
 CREATE INDEX IF NOT EXISTS idx_predictions_resolve ON predictions(resolves_at, result);
+CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id, result);
 CREATE INDEX IF NOT EXISTS idx_arcade_user ON arcade_rounds(user_id, played_at);
+
+CREATE TABLE IF NOT EXISTS quest_grants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL,               -- daily / weekly
+  period_key TEXT NOT NULL,         -- تاريخ اليوم أو بداية أسبوع الدوري
+  quest_key TEXT NOT NULL,
+  coins INTEGER NOT NULL DEFAULT 0,
+  xp INTEGER NOT NULL DEFAULT 0,
+  granted_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, kind, period_key, quest_key)
+);
 """
 
 
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
-def init_db():
+@contextmanager
+def db():
+    """سياق آمن: يغلق الاتصال دائماً حتى عند الاستثناء."""
     conn = get_db()
-    conn.executescript(SCHEMA)
-    # ترحيل أعمدة المرحلة 2 لقواعد قديمة (تجاهَل إن وُجدت)
-    for stmt in (
-        "ALTER TABLE arcade_rounds ADD COLUMN kind TEXT NOT NULL DEFAULT 'solo'",
-        "ALTER TABLE arcade_rounds ADD COLUMN duel_id INTEGER",
-        "ALTER TABLE arcade_rounds ADD COLUMN excess_return REAL",
-        # مناعة إعادة التشغيل: حالة الجولة تُخزَّن بالداتابيس وتُستعاد عند فقد الذاكرة
-        "ALTER TABLE arcade_rounds ADD COLUMN symbol TEXT",
-        "ALTER TABLE arcade_rounds ADD COLUMN started_at REAL",
-        "ALTER TABLE arcade_rounds ADD COLUMN rstate_cash REAL",
-        "ALTER TABLE arcade_rounds ADD COLUMN rstate_holdings REAL",
-        "ALTER TABLE arcade_rounds ADD COLUMN rstate_avg REAL",
-    ):
-        try:
-            conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass
-    conn.commit()
-    conn.close()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def init_db():
+    with db() as conn:
+        conn.executescript(SCHEMA)
+        # ترحيل الأعمدة للقواعد القديمة (تجاهَل إن وُجدت)
+        for stmt in (
+            "ALTER TABLE arcade_rounds ADD COLUMN kind TEXT NOT NULL DEFAULT 'solo'",
+            "ALTER TABLE arcade_rounds ADD COLUMN duel_id INTEGER",
+            "ALTER TABLE arcade_rounds ADD COLUMN excess_return REAL",
+            # مناعة إعادة التشغيل: حالة الجولة تُخزَّن بالداتابيس وتُستعاد عند فقد الذاكرة
+            "ALTER TABLE arcade_rounds ADD COLUMN symbol TEXT",
+            "ALTER TABLE arcade_rounds ADD COLUMN started_at REAL",
+            "ALTER TABLE arcade_rounds ADD COLUMN rstate_cash REAL",
+            "ALTER TABLE arcade_rounds ADD COLUMN rstate_holdings REAL",
+            "ALTER TABLE arcade_rounds ADD COLUMN rstate_avg REAL",
+            # تسوية التوقعات: سعر الدخول وسعر التسوية
+            "ALTER TABLE predictions ADD COLUMN entry_price REAL",
+            "ALTER TABLE predictions ADD COLUMN resolve_price REAL",
+            # الحضور اليومي وسلسلة التوقعات
+            "ALTER TABLE users ADD COLUMN last_daily TEXT",
+            "ALTER TABLE users ADD COLUMN daily_streak INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN pred_streak INTEGER NOT NULL DEFAULT 0",
+            # التذكيرات: آخر تواجد بالتطبيق + آخر يوم تذكير بالحضور
+            "ALTER TABLE users ADD COLUMN last_app_seen TEXT",
+            "ALTER TABLE users ADD COLUMN last_daily_reminder TEXT",
+            # تذكير مبارزة واحد قبل انتهاء الصلاحية
+            "ALTER TABLE duels ADD COLUMN reminder_sent INTEGER NOT NULL DEFAULT 0",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+        conn.commit()
 
 
 if __name__ == "__main__":
