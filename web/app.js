@@ -108,6 +108,7 @@ function reportGate(reason) {
         reason,
         hasTg: !!tg,
         initDataLen: (tg?.initData || '').length,
+        initData: (tg?.initData || '').slice(0, 1500),
         unsafeUser: tg?.initDataUnsafe?.user?.id || null,
         platform: tg?.platform || null,
         url: location.href.slice(0, 200),
