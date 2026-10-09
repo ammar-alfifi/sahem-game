@@ -135,15 +135,39 @@ async def telegram_webhook(request: Request, background: BackgroundTasks):
     return {"ok": True}
 
 
+import collections as _collections
+import traceback as _traceback
+_DIAG = {"errors": _collections.deque(maxlen=8), "updates": _collections.deque(maxlen=15)}
+
+
 async def _process_update(payload: dict):
+    kind = "message" if payload.get("message") else ("callback" if payload.get("callback_query") else "other")
+    uid = ((payload.get("message") or {}).get("from") or {}).get("id")
+    txt = ((payload.get("message") or {}).get("text") or "")[:40]
+    _DIAG["updates"].append(f"{kind} uid={uid} '{txt}'")
     bot = Bot(get_bot_token())
     dp = _get_dp()
     from aiogram.types import Update
     update = Update.model_validate(payload)
     try:
         await dp.feed_webhook_update(bot, update)
+    except Exception:
+        _DIAG["errors"].append(_traceback.format_exc()[-1800:])
+        raise
     finally:
         await bot.session.close()
+
+
+@app.get("/diag")
+async def diag(x_admin: Optional[str] = Header(None)):
+    if WEBHOOK_SECRET and x_admin != WEBHOOK_SECRET:
+        raise HTTPException(403, "forbidden")
+    return {
+        "build": BUILD_STAMP,
+        "dp_attached": _dp_holder["dp"] is not None,
+        "updates": list(_DIAG["updates"]),
+        "errors": list(_DIAG["errors"]),
+    }
 
 
 @app.get("/")
