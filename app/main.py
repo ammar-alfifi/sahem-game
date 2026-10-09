@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException, Header, BackgroundTasks
@@ -422,6 +423,9 @@ def _auth_optional(request: Request, authorization: Optional[str]) -> Optional[i
 async def api_league(request: Request, authorization: Optional[str] = Header(None)):
     uid = _auth_optional(request, authorization)
     ps, pe = league_mod.current_period()
+    prev_start = league_mod.current_period(
+        datetime.fromisoformat(ps) - timedelta(days=7)
+    )[0]
     return {
         "period_start": ps,
         "period_end": pe,
@@ -429,6 +433,7 @@ async def api_league(request: Request, authorization: Optional[str] = Header(Non
         "standings": league_mod.standings(ps, limit=10),
         "me": league_mod.my_view(uid, ps),
         "players": league_mod.players_count(ps),
+        "champion": league_mod.last_champion(prev_start),
         "prizes": [
             {"rank": 1, "coins": 50000, "xp": 500},
             {"rank": 2, "coins": 30000, "xp": 300},

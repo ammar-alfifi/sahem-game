@@ -773,6 +773,11 @@ async function loadLeague() {
   }
   $('lg-prizes').innerHTML = (lg.prizes || [])
     .map(p => `<span style="margin-left:10px">🏅 ${p.rank}: ${fmt0(p.coins)} ◈ + ${p.xp} XP</span>`).join('');
+  const champ = lg.champion;
+  if ($('lg-rules')) {
+    $('lg-rules').innerHTML = 'النقاط عائدك الزائد + 2 لكل توقع صحيح • على الأقل 3 جولات لجائزة • توزيع يوم الجمعة'
+      + (champ ? `<br>🏆 بطل الأسبوع الماضي: <b>${esc(champ.username || 'لاعب')}</b> (${fmt0(champ.score)} نقطة)` : '');
+  }
 }
 
 /* ════════════ التبويبات ════════════ */

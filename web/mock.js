@@ -136,6 +136,7 @@
         { rank: 4, username: 'قنديل', excess_sum: 4.2, rounds: 3, pred_wins: 0, score: 4.2 },
       ],
       me: { rank: 2, score: 22.2, rounds: 6, pred_wins: 2, gap_text: 'فجوة +10.3 نقطة عن «المضارب»' },
+      champion: { username: 'أبو سهم', score: 41.8 },
       prizes: [
         { rank: 1, coins: 50000, xp: 500 }, { rank: 2, coins: 30000, xp: 300 },
         { rank: 3, coins: 20000, xp: 200 }, { rank: '4-10', coins: 10000, xp: 100 },
