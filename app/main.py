@@ -179,7 +179,6 @@ async def app_diag(data: dict):
         "reason": str(data.get("reason", ""))[:200],
         "hasTg": data.get("hasTg"),
         "initDataLen": data.get("initDataLen"),
-        "initData": str(data.get("initData", ""))[:1500],
         "unsafeUser": data.get("unsafeUser"),
         "platform": data.get("platform"),
         "url": str(data.get("url", ""))[:200],
