@@ -14,8 +14,11 @@ def get_webapp_url() -> str | None:
         # لا تُلحق /app/ إذا كانت موجودة أصلاً في الرابط
         if not path.endswith("/app"):
             path += "/app"
-        return path + "/"
+        return path + "/?v=" + str(_BUILD)
     return None
+
+
+_BUILD = 3  # ارفع الرقم عند أي تحديث كبير للواجهة — يفرّغ كاش تيليجرام
 
 
 def get_bot_token() -> str:
