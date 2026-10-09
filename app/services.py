@@ -64,15 +64,14 @@ def get_or_create_user(telegram_id: int, username: str | None = None) -> dict:
 def auth_from_initdata(init_data: str) -> dict | None:
     """التحقق من initData الصادر من تيليجرام (HMAC وفق مواصفة Telegram Web Apps).
 
-    ملاحظات المواصفة:
-      • تُفكّ ترميز URL للقيم أولاً (parse_qsl) قبل بناء سلسلة التحقق — كما في الأمثلة الرسمية.
-      • يُستثنى الحقلان `hash` و`signature` من سلسلة التحقق.
+    مثبت تجريبياً على بيانات حقيقية (Android):
+      • تُفكّ ترميز URL للقيم أولاً (parse_qsl) قبل بناء سلسلة التحقق.
+      • يُستثنى الحقل `hash` فقط — ويبقى `signature` داخل سلسلة التحقق.
     """
     try:
         from urllib.parse import parse_qsl
         data = dict(parse_qsl(init_data, keep_blank_values=True))
         received_hash = data.pop("hash", None)
-        data.pop("signature", None)
         if not received_hash:
             return None
         data_check = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
