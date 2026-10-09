@@ -90,7 +90,6 @@ body {
 }
 .brand { font-size: 1.35rem; font-weight: 900; }
 .brand .bolt { color: var(--gold); }
-.brand .vmark { font-size: .58em; font-weight: 700; color: var(--muted-2); margin-right: 3px; vertical-align: middle; }
 .top-user { display: flex; gap: 8px; align-items: center; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px;

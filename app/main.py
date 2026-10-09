@@ -192,7 +192,7 @@ async def root():
     return {"name": "سهم API", "docs": "/docs", "app": "/app/"}
 
 
-BUILD_STAMP = "ui-v4"
+BUILD_STAMP = "1.0"
 
 @app.get("/health")
 async def health():

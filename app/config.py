@@ -25,7 +25,7 @@ def get_webapp_url() -> str | None:
     return None
 
 
-_BUILD = 4  # ارفع الرقم عند أي تحديث كبير للواجهة — يفرّغ كاش تيليجرام
+_BUILD = 1  # ارفع الرقم عند أي تحديث كبير للواجهة — يفرّغ كاش تيليجرام
 
 
 def get_bot_token() -> str:
