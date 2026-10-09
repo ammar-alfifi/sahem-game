@@ -275,6 +275,10 @@ async def cb_duel(cb: CallbackQuery):
         await cb.answer()
         return
     d = res["duel"]
+    kb = []
+    webapp_url = get_webapp_url()
+    if webapp_url:
+        kb.append([InlineKeyboardButton(text="🎮 افتح التطبيق", web_app=WebAppInfo(url=webapp_url))])
     await cb.message.answer(
         f"⚔️ **تحدي مبارزة جاهز!**\n\n"
         f"📊 {d['symbol_name']} • {d['session_len']} يوم\n"
@@ -282,6 +286,7 @@ async def cb_duel(cb: CallbackQuery):
         f"أرسل لصديقه الرمز: `{d['code']}` — يدخل بـ /join {d['code']}\n"
         f"أو شاركه هذا البوت: t.me/Sahmgame_bot?start=join_{d['code']}",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb) if kb else None,
     )
     await cb.answer()
 
@@ -357,6 +362,11 @@ async def cmd_duel(message: Message):
     d = res["duel"]
     bot_username = (await message.bot.me()).username if hasattr(message.bot, "me") else ""
     share = f"https://t.me/{bot_username}?start=join_{d['code']}" if bot_username else f" رمز التحدي: {d['code']}"
+    kb = []
+    webapp_url = get_webapp_url()
+    if webapp_url:
+        kb.append([InlineKeyboardButton(text="🎮 افتح التطبيق — جاهز للمعركة", web_app=WebAppInfo(url=webapp_url))])
+        kb.append([InlineKeyboardButton(text="⚖️ لوحة الدوري", web_app=WebAppInfo(url=webapp_url + "#leaderboard"))])
     await message.answer(
         f"⚔️ **تحدي مبارزة جاهز!**\n\n"
         f"📊 نافذة تاريخية: {d['symbol_name']} • {d['session_len']} يوم\n"
@@ -366,6 +376,7 @@ async def cmd_duel(message: Message):
         f"أو أرسل له الرمز: `{d['code']}` — يدخل بـ /join {d['code']}\n"
         f"صلاحية التحدي: 24 ساعة",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb) if kb else None,
     )
 
 

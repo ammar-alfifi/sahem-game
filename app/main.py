@@ -74,7 +74,8 @@ async def job_league_award():
                         w["telegram_id"],
                         f"🏆 الدوري الأسبوعي — الجوائز وصلت!\n"
                         f"{medals.get(w['rank'], '#' + str(w['rank']))} جئت مركز {w['rank']}\n"
-                        f"🎁 حصلت على {w['prize_coins']:,} عملة وهمية — مبادرة التداول الجديد!",
+                        f"🎁 جائزتك: {w['prize_coins']:,} عملة وهمية + XP إضافي\n"
+                        "الأسبوع الجديد بدأ — افلح من جديد!",
                     )
                 except Exception:
                     pass
@@ -237,7 +238,7 @@ async def root():
     return {"name": "سهم API", "docs": "/docs", "app": "/app/"}
 
 
-BUILD_STAMP = "2.0-duels"
+BUILD_STAMP = "2.1-duels-polish"
 
 @app.get("/health")
 async def health():
