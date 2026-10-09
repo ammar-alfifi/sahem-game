@@ -289,6 +289,7 @@ def resolve_due_predictions() -> int:
 ARCADE_STEP_SECONDS = 4          # يوم تداول ≈ 4 ثوان
 ARCADE_MIN_SESSION = 30          # جولة على الأقل 30 جلسة تداول (≈ دقيقتان)
 ARCADE_MAX_SESSION = 45
+ARCADE_DEFAULT_SESSION = 35      # احتياط لعمليات الاستعادة بما فقدت الجلسة
 
 # حالة الجولة النشطة في الذاكرة (تصفية عند إعادة التشغيل — مقبول ل MVP)
 ACTIVE_ROUNDS: dict[int, dict] = {}
@@ -340,9 +341,11 @@ def start_arcade_round(
 
     conn = get_db()
     conn.execute(
-        """INSERT INTO arcade_rounds(user_id, scenario_seed, start_ts, end_ts, capital, kind, duel_id)
-           VALUES(?,?,?,?,?,?,?)""",
-        (user_id, f"{symbol}:{w['session_len']}", w["start_ts"], w["end_ts"], STARTING_CAPITAL, kind, duel_id),
+        """INSERT INTO arcade_rounds(user_id, scenario_seed, start_ts, end_ts, capital, kind, duel_id,
+                                      symbol, started_at, rstate_cash, rstate_holdings, rstate_avg)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (user_id, f"{symbol}:{w['session_len']}", w["start_ts"], w["end_ts"], STARTING_CAPITAL, kind, duel_id,
+         symbol, datetime.now(timezone.utc).timestamp(), float(STARTING_CAPITAL), 0.0, 0.0),
     )
     round_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.commit()
@@ -375,11 +378,49 @@ def start_arcade_round(
     }
 
 
+def _restore_round(round_id: int, user_id: int) -> dict | None:
+    """استعادة الجولة بعد فقد الذاكرة (إعادة تشغيل الخادم أثناء جولة) من أعمدة الداتابيس."""
+    if not round_id:
+        return None
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM arcade_rounds WHERE id=? AND user_id=?", (round_id, user_id)
+    ).fetchone()
+    conn.close()
+    if not row or row["final_value"] is not None:
+        return None
+    if row["symbol"] is None or row["started_at"] is None:
+        return None
+    w = (row["scenario_seed"] or "").split(":")
+    try:
+        session_len = int(w[1]) if len(w) > 1 else None
+    except ValueError:
+        session_len = None
+    st = {
+        "user_id": user_id,
+        "symbol": row["symbol"],
+        "session_len": session_len or ARCADE_DEFAULT_SESSION,
+        "start_ts": row["start_ts"],
+        "end_ts": row["end_ts"],
+        "kind": row["kind"] or "solo",
+        "duel_id": row["duel_id"],
+        "cash": row["rstate_cash"] if row["rstate_cash"] is not None else float(STARTING_CAPITAL),
+        "holdings": row["rstate_holdings"] or 0.0,
+        "avg_cost": row["rstate_avg"] or 0.0,
+        "started_at": row["started_at"],
+        "finished": False,
+    }
+    ACTIVE_ROUNDS[round_id] = st
+    return st
+
+
 def get_arcade_step(round_id: int, user_id: int) -> dict | None:
     """إعادة الشمعة التالية إن كان توقيتها قد حان (مضاد الغش)."""
     st = ACTIVE_ROUNDS.get(round_id)
     if not st or st["user_id"] != user_id or st["finished"]:
-        return None
+        st = _restore_round(round_id, user_id)
+        if not st or st["user_id"] != user_id:
+            return None
     candles = market_data.get_candles(st["symbol"], st["start_ts"], st["end_ts"])
     if len(candles) < ARCADE_MIN_SESSION:
         return None
@@ -404,7 +445,9 @@ def arcade_trade(round_id: int, user_id: int, side: str, quantity: float) -> dic
     """تنفيذ صفقة داخل الجولة بسعر إغلاق الخطوة الحالية (عمولة 0.1%)."""
     st = ACTIVE_ROUNDS.get(round_id)
     if not st or st["user_id"] != user_id or st["finished"]:
-        return {"ok": False, "error": "الجولة غير نشطة"}
+        st = _restore_round(round_id, user_id)
+        if not st or st["user_id"] != user_id or st["finished"]:
+            return {"ok": False, "error": "الجولة غير نشطة"}
     info = get_arcade_step(round_id, user_id)
     if not info:
         return {"ok": False, "error": "الجولة غير متاحة"}
@@ -427,6 +470,17 @@ def arcade_trade(round_id: int, user_id: int, side: str, quantity: float) -> dic
             st["holdings"] = 0
     else:  # انتظار / وقف خسارة — MVP: انتظار فقط
         pass
+    # استمرارية الحالة: حفظ حظّي إذا أعيد تشغيل الخادم أثناء الجولة
+    try:
+        conn = get_db()
+        conn.execute(
+            "UPDATE arcade_rounds SET rstate_cash=?, rstate_holdings=?, rstate_avg=? WHERE id=?",
+            (st["cash"], st["holdings"], st["avg_cost"], round_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     return {
         "ok": True,
         "cash": round(st["cash"], 2),
@@ -439,6 +493,8 @@ def arcade_trade(round_id: int, user_id: int, side: str, quantity: float) -> dic
 def finish_arcade_round(round_id: int, user_id: int) -> dict | None:
     """إنهاء الجولة: قيمة نهائية + العائد الزائد على المؤشر + نقاط ومكافآت."""
     st = ACTIVE_ROUNDS.pop(round_id, None)
+    if not st or st["user_id"] != user_id:
+        st = _restore_round(round_id, user_id)
     conn = get_db()
     round_row = conn.execute("SELECT * FROM arcade_rounds WHERE id=? AND user_id=?", (round_id, user_id)).fetchone()
     if not round_row or not st:

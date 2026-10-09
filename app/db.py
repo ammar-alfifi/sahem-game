@@ -146,6 +146,12 @@ def init_db():
         "ALTER TABLE arcade_rounds ADD COLUMN kind TEXT NOT NULL DEFAULT 'solo'",
         "ALTER TABLE arcade_rounds ADD COLUMN duel_id INTEGER",
         "ALTER TABLE arcade_rounds ADD COLUMN excess_return REAL",
+        # مناعة إعادة التشغيل: حالة الجولة تُخزَّن بالداتابيس وتُستعاد عند فقد الذاكرة
+        "ALTER TABLE arcade_rounds ADD COLUMN symbol TEXT",
+        "ALTER TABLE arcade_rounds ADD COLUMN started_at REAL",
+        "ALTER TABLE arcade_rounds ADD COLUMN rstate_cash REAL",
+        "ALTER TABLE arcade_rounds ADD COLUMN rstate_holdings REAL",
+        "ALTER TABLE arcade_rounds ADD COLUMN rstate_avg REAL",
     ):
         try:
             conn.execute(stmt)
