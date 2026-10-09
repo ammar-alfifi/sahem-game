@@ -49,6 +49,21 @@ async def job_resolve_predictions():
 scheduler = AsyncIOScheduler(timezone="UTC")
 
 
+async def job_autoseed():
+    """تخزين البيانات التاريخية تلقائياً عند أول إقلاع (قرص الخطة المجانية مؤقت)."""
+    try:
+        from .db import get_db
+        conn = get_db()
+        n = conn.execute("SELECT COUNT(*) FROM candles").fetchone()[0]
+        conn.close()
+        if n < 100:
+            log.info("seeding historical archives (first boot)...")
+            total = market_data.seed_archives(years=4)
+            log.info(f"seeded {total} candles")
+    except Exception as e:
+        log.warning(f"autoseed failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -70,8 +85,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(job_resolve_predictions, "interval", minutes=60, id="resolve_predictions")
     scheduler.start()
 
-    # تحديث أولي غير حاجز
+    # تحديث أولي غير حاجز + تهيئة التاريخ تلقائياً إذا كان فارغاً
     asyncio.create_task(job_refresh_prices())
+    asyncio.create_task(job_autoseed())
 
     async def feed_updates():  # تجعل التطبيق منظم للتحديثات عبر webhook endpoint
         pass
