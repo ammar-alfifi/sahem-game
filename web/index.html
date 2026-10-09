@@ -61,6 +61,11 @@
   <!-- ═══ الأركيد ═══ -->
   <section id="tab-arcade" class="tabview">
 
+    <div class="seg" id="arcade-seg">
+      <button class="seg-b active" data-mode="solo">⚡ جولة فردية</button>
+      <button class="seg-b" data-mode="duel">⚔️ مبارزة <span class="seg-dots" id="seg-duel-dot" hidden></span></button>
+    </div>
+
     <div id="arcade-intro">
       <div class="hero">
         <div class="hero-glow"></div>
@@ -75,6 +80,29 @@
         <button id="arcade-start" class="btn btn-primary btn-xl">🚀 ابدأ الجولة</button>
         <p class="hero-hint">🏆 الفوز بالعائد <b>الزائد</b> عن السوق — كل جولة نافذة تاريخية عشوائية فريدة</p>
       </div>
+    </div>
+
+    <div id="duel-intro" class="hidden">
+      <div class="hero duel-hero">
+        <div class="hero-glow"></div>
+        <div class="hero-emoji">⚔️</div>
+        <h1>مبارزة 1v1</h1>
+        <p>أنت وخصمك نافذة تاريخية <b>واحدة</b> بالضبط ونفس الرأس المال —<br>الفائز صاحب العائد الزائد الأعلى</p>
+        <div class="hero-tags">
+          <span class="tag">🪙 +5,000 للفائز</span>
+          <span class="tag">⭐ +120 نقطة</span>
+          <span class="tag">⏳ فرصة واحدة</span>
+        </div>
+        <button id="duel-create" class="btn btn-primary btn-xl">🎯 أنشئ تحدّياً وشاركه</button>
+        <div class="duel-quickrow">
+          <button id="duel-quick" class="btn btn-ghost btn-lg">🎲 مطابقة سريعة</button>
+          <div class="duel-code-wrap">
+            <input id="duel-code" maxlength="6" placeholder="رمز؟" autocomplete="off">
+            <button id="duel-join" class="btn btn-ghost">انضم</button>
+          </div>
+        </div>
+      </div>
+      <div id="duel-list" class="stack"></div>
     </div>
 
     <div id="arcade-game" class="hidden">
@@ -133,6 +161,7 @@
           <div><span>المكافأة</span><b id="r-bonus">—</b></div>
         </div>
         <div class="result-xp" id="result-xp"></div>
+        <div id="result-duel" class="result-duel hidden"></div>
         <button id="arcade-again" class="btn btn-primary btn-block btn-lg">⚡ جولة جديدة</button>
       </div>
     </div>
@@ -169,6 +198,15 @@
 
   <!-- ═══ الصدارة ═══ -->
   <section id="tab-leaderboard" class="tabview">
+    <div class="league-card">
+      <div class="lg-head">
+        <span>🥇 الدوري الأسبوعي</span>
+        <span class="lg-count" id="lg-countdown">—</span>
+      </div>
+      <div id="lg-top" class="lg-top"></div>
+      <div class="lg-prizes" id="lg-prizes"></div>
+      <div class="lg-rules">النقاط عائدك الزائد + 2 لكل توقع صحيح • على الأقل 3 جولات لجائزة • توزيع يوم الجمعة</div>
+    </div>
     <h3 class="sec-title center">🏆 أبطال الأسبوع</h3>
     <div id="lb-podium" class="podium"></div>
     <div id="lb-list" class="stack"></div>

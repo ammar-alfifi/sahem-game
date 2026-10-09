@@ -30,6 +30,7 @@ def main_menu_keyboard(webapp_url: str | None = None) -> InlineKeyboardMarkup:
     if webapp_url:
         kb.append([InlineKeyboardButton(text="🎮 افتح اللعبة الكاملة", web_app=WebAppInfo(url=webapp_url))])
     kb.append([InlineKeyboardButton(text="📈 اختر سهم للتوقّع", callback_data="menu:choose")])
+    kb.append([InlineKeyboardButton(text="⚔️ تحدي صديق في مبارزة", callback_data="menu:duel")])
     kb.append([InlineKeyboardButton(text="🏆 لوحة الصدارة", callback_data="menu:leaderboard")])
     kb.append([InlineKeyboardButton(text="💼 محفظتي ورصيدي", callback_data="menu:portfolio")])
     kb.append([InlineKeyboardButton(text="🔄 تحديث الأسعار", callback_data="menu:refresh")])
@@ -43,6 +44,25 @@ def _fmt_num(n: float) -> str:
 @router.message(CommandStart())
 async def cmd_start(message: Message, bot: Bot):
     u = services.get_or_create_user(message.from_user.id, message.from_user.username)
+    # رابط تحدٍّ مباشر: /start join_XXXXXX
+    args = (message.get_args() or "").strip()
+    from . import duels as duels_mod
+    if args.lower().startswith("join_"):
+        code = args[5:]
+        res = duels_mod.join_duel(u["id"], code)
+        if res.get("ok"):
+            d = res["duel"]
+            await message.answer(
+                f"⚔️ قبلت التحدي!\n"
+                f"المتحدّي: {d['challenger_name']}\n"
+                f"📊 {d['symbol_name']} • {d['session_len']} يوم\n"
+                f"🗓️ من {d['start_ts']} إلى {d['end_ts']}\n\n"
+                "افتح التطبيق → الأركيد → تبويب «مبارزة» واضغط «العب جولتك».",
+                reply_markup=main_menu_keyboard(get_webapp_url()),
+            )
+        else:
+            await message.answer(f"⚠️ {res['error']}")
+        return
     text = (
         f"مرحباً {message.from_user.first_name}! 👋\n\n"
         "🎮 **سهم** — العالم الحقيقي هو الملعب، وأنت تتداول بمال وهمي.\n\n"
@@ -63,6 +83,9 @@ async def cmd_help(message: Message):
         "/predict — توقّع إغلاق اليوم\n"
         "/portfolio — محفظتك\n"
         "/leaderboard — لوحة الصدارة\n"
+        "/league — الدوري الأسبوعي والجوائز\n"
+        "/duel — أنشئ تحدي مبارزة وشاركه\n"
+        "/join CODE — انضم بتحدي صديق\n"
         "/balance — رصيدك ومستواك\n"
         "/arcade — جولة أركيد سريعة",
     )
@@ -240,6 +263,28 @@ async def cb_leaderboard(cb: CallbackQuery):
     await cb.answer()
 
 
+@router.callback_query(F.data == "menu:duel")
+async def cb_duel(cb: CallbackQuery):
+    """زر القائمة: يلحق منطق /duel نفسه."""
+    u = services.get_or_create_user(cb.from_user.id, cb.from_user.username)
+    from . import duels as duels_mod
+    res = duels_mod.create_duel(u["id"])
+    if not res.get("ok"):
+        await cb.message.answer(f"⚠️ {res['error']}")
+        await cb.answer()
+        return
+    d = res["duel"]
+    await cb.message.answer(
+        f"⚔️ **تحدي مبارزة جاهز!**\n\n"
+        f"📊 {d['symbol_name']} • {d['session_len']} يوم\n"
+        f"🗓️ من {d['start_ts']} إلى {d['end_ts']}\n\n"
+        f"أرسل لصديقه الرمز: `{d['code']}` — يدخل بـ /join {d['code']}\n"
+        f"أو شاركه هذا البوت: t.me/Sahmgame_bot?start=join_{d['code']}",
+        parse_mode="Markdown",
+    )
+    await cb.answer()
+
+
 @router.callback_query(F.data == "menu:portfolio")
 async def cb_portfolio(cb: CallbackQuery):
     u = services.get_or_create_user(cb.from_user.id, cb.from_user.username)
@@ -297,3 +342,71 @@ async def notify_prediction_result(user_id: int, bot: Bot):
 
 def register_router(dp: Dispatcher):
     dp.include_router(router)
+
+
+# ---------- المرحلة 2: تحديات المبارزات + الدوري ----------
+@router.message(Command("duel"))
+async def cmd_duel(message: Message):
+    u = services.get_or_create_user(message.from_user.id, message.from_user.username)
+    from . import duels as duels_mod
+    res = duels_mod.create_duel(u["id"])
+    if not res.get("ok"):
+        await message.answer(f"⚠️ {res['error']}")
+        return
+    d = res["duel"]
+    bot_username = (await message.bot.me()).username if hasattr(message.bot, "me") else ""
+    share = f"https://t.me/{bot_username}?start=join_{d['code']}" if bot_username else f" رمز التحدي: {d['code']}"
+    await message.answer(
+        f"⚔️ **تحدي مبارزة جاهز!**\n\n"
+        f"📊 نافذة تاريخية: {d['symbol_name']} • {d['session_len']} يوم\n"
+        f"🗓️ من {d['start_ts']} إلى {d['end_ts']}\n"
+        f"🪙 رأس مال 100,000 لكل طرف — الفائز العائد الزائد الأعلى\n\n"
+        f"📤 شاركه مع صديق:\n{share}\n\n"
+        f"أو أرسل له الرمز: `{d['code']}` — يدخل بـ /join {d['code']}\n"
+        f"صلاحية التحدي: 24 ساعة",
+        parse_mode="Markdown",
+    )
+
+
+@router.message(Command("join"))
+async def cmd_join(message: Message):
+    u = services.get_or_create_user(message.from_user.id, message.from_user.username)
+    code = (message.get_args() or "").strip()
+    if not code:
+        await message.answer("اكتب الرمز هكذا: /join XXXXXX (من رسالة التحدي)")
+        return
+    from . import duels as duels_mod
+    res = duels_mod.join_duel(u["id"], code)
+    if res.get("ok"):
+        d = res["duel"]
+        await message.answer(
+            f"⚔️ قبلت التحدي!\n"
+            f"المتحدّي: {d['challenger_name']}\n"
+            f"📊 {d['symbol_name']} • {d['session_len']} يوم\n"
+            f"🗓️ من {d['start_ts']} إلى {d['end_ts']}\n\n"
+            "افتح التطبيق → الأركيد → «مبارزة» → «العب جولتك».",
+        )
+    else:
+        await message.answer(f"⚠️ {res['error']}")
+
+
+@router.message(Command("league"))
+async def cmd_league(message: Message):
+    from . import league as league_mod
+    rows = league_mod.standings(limit=10)
+    lines = [
+        "🥇 **الدوري الأسبوعي**",
+        f"⏳ ينقضي خلال: {league_mod.week_countdown()}\n",
+    ]
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    if not rows:
+        lines.append("لا نتائج بعد — افتح التطبيق وابدأ جولة أركيد!")
+    for r in rows:
+        medal = medals.get(r["rank"], f"{r['rank']}.")
+        name = r["username"] or "لاعب"
+        lines.append(
+            f"{medal} {name} — {r['score']:+,.1f} نقاط "
+            f"({r['rounds']} جولة • {r['pred_wins']} توقع)"
+        )
+    lines.append("\n🎁 جوائز الجمعة: 50,000+30,000+20,000… عملة وهمية")
+    await message.answer("\n".join(lines), parse_mode="Markdown")

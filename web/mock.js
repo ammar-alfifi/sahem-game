@@ -21,6 +21,40 @@
   let cash = 72000;
   let pricesUpdated = prices;
   let arcade = null;
+  let duelGame = false;
+  let myDuels = [
+    {
+      id: 5, code: 'QA3K7P', symbol: 'GOOGL', symbol_name: 'Google',
+      start_ts: '2022-07-28', end_ts: '2022-09-20', session_len: 30,
+      status: 'open', challenger_id: 1, challenger_name: 'لاعب تجريبي',
+      opponent_id: null, opponent_name: null,
+      challenger_excess: null, opponent_excess: null, winner_id: null,
+      expires_at: new Date(Date.now() + 24 * 3600e3).toISOString().slice(0, 19),
+    },
+    {
+      id: 4, code: 'MM2X9B', symbol: 'NVDA', symbol_name: 'NVIDIA',
+      start_ts: '2020-06-11', end_ts: '2020-07-21', session_len: 28,
+      status: 'finished', challenger_id: 9, challenger_name: 'المتحسّب',
+      opponent_id: 1, opponent_name: 'لاعب تجريبي',
+      challenger_excess: 4.2, opponent_excess: 11.8, winner_id: 1,
+      expires_at: new Date(Date.now() - 3600e3).toISOString().slice(0, 19),
+    },
+  ];
+
+  function mockArcadeFinish() {
+    if (!duelGame) {
+      duelGame = false;
+      return { final_value: 108300, capital: 100000, return_pct: 8.3, benchmark_return_pct: 2.1, excess_return_pct: 6.2, rank: 'محترف 🥇', points: 220, bonus_coins: 830, days: 34 };
+    }
+    duelGame = false;
+    const d = myDuels[0];
+    d.status = 'finished'; d.challenger_excess = 6.2; d.opponent_excess = -1.4; d.winner_id = 1;
+    return {
+      final_value: 106200, capital: 100000, return_pct: 6.2, benchmark_return_pct: 8.1, excess_return_pct: -1.9,
+      rank: 'متمهل 😐', points: 45, bonus_coins: 620, days: 30,
+      duel: { state: 'done', message: '🏆 فزت بالمبارزة! +120 نقطة و+5,000 عملة', duel: { ...d } },
+    };
+  }
 
   function around(name, market, symbol) {
     const p = pricesUpdated[symbol];
@@ -66,7 +100,38 @@
       return { round_id: arcade.round_id, step: arcade.step, total_steps: 40, candle, cash: arcade.cash, holdings: arcade.holdings, portfolio_value: arcade.cash + arcade.holdings * price, is_last: arcade.step >= 39 };
     },
     '/api/arcade/id/trade': () => ({ ok: true, cash: arcade.cash, holdings: arcade.holdings, avg_cost: arcade.avg, executed_price: arcade.price }),
-    '/api/arcade/id/finish': () => ({ final_value: 108300, capital: 100000, return_pct: 8.3, benchmark_return_pct: 2.1, excess_return_pct: 6.2, rank: 'محترف 🥇', points: 220, bonus_coins: 830, days: 34 }),
+    '/api/arcade/id/finish': () => mockArcadeFinish(),
+
+    /* ─── المبارزات (المرحلة 2) ─── */
+    '/api/duels/join': () => {
+      const d = myDuels.find(x => x.status === 'open');
+      if (d) { d.status = 'active'; d.opponent_name = 'المتحسّب'; d.opponent_id = 7; }
+      return { ok: true, duel: d || { error: 'لا تحديات' } };
+    },
+    '/api/duels/play': () => {
+      const sym = 'GOOGL';
+      arcade = { round_id: 88, symbol: sym, name: 'Google', capital: 100000, step_seconds: 4, started: Date.now(), cash: 100000, holdings: 0, avg: 0, step: 0, price: 113 };
+      duelGame = true;
+      return { ok: true, round: { round_id: arcade.round_id, symbol: sym, name: 'Google', capital: 100000, session_len: 30, step_seconds: 4, start_ts: '2022-07-28', kind: 'duel', duel_id: 5 } };
+    },
+    '/api/duels': () => myDuels,
+
+    /* ─── الدوري الأسبوعي ─── */
+    '/api/league': () => ({
+      period_start: '2026-10-02T00:00:00+03:00', period_end: '2026-10-09T00:00:00+03:00',
+      countdown: '2 يوم و 5 ساعة',
+      standings: [
+        { rank: 1, username: 'المضارب', excess_sum: 24.5, rounds: 8, pred_wins: 4, score: 32.5 },
+        { rank: 2, username: 'لاعب تجريبي', excess_sum: 18.2, rounds: 6, pred_wins: 2, score: 22.2 },
+        { rank: 3, username: 'الصاعد', excess_sum: 9.7, rounds: 5, pred_wins: 1, score: 11.7 },
+        { rank: 4, username: 'قنديل', excess_sum: 4.2, rounds: 3, pred_wins: 0, score: 4.2 },
+      ],
+      prizes: [
+        { rank: 1, coins: 50000, xp: 500 }, { rank: 2, coins: 30000, xp: 300 },
+        { rank: 3, coins: 20000, xp: 200 }, { rank: '4-10', coins: 10000, xp: 100 },
+      ],
+      rules: 'عائدك الزائد + 2 لكل توقّع صحيح • 3 جولات على الأقل لجائزة',
+    }),
   };
 
   const realFetch = window.fetch.bind(window);
@@ -74,6 +139,7 @@
     let path = String(url).replace(/^https?:\/\/[^/]+/, '');
     // توحيد مسارات الأركيد الديناميكية: /api/arcade/<id>/step → /api/arcade/id/step
     path = path.replace(/\/api\/arcade\/\d+\//, '/api/arcade/id/');
+    path = path.replace(/\/api\/duels\/\d+\/play/, '/api/duels/play');
     const key = Object.keys(routes).find(k => path === k || path.startsWith(k + '/') || path.startsWith(k + '?'));
     if (!key) return realFetch(url, opts);
     await new Promise(r => setTimeout(r, 350)); // إحساس شبكة واقعي
@@ -94,6 +160,18 @@
       if (b.side === 'buy') { const p = pricesUpdated[b.symbol].price; cash -= p * b.quantity * 1.001; }
       else if (holdings[b.symbol]) { const p = pricesUpdated[b.symbol].price; cash += p * Math.min(b.quantity, holdings[b.symbol]) * 0.999; }
       return { ok: true, price: pricesUpdated[b.symbol].price };
+    }
+    // إنشاء تحدي (POST /api/duels) — غير قائمة العرض
+    if (key === '/api/duels' && (opts.method || 'GET') === 'POST') {
+      const d = {
+        id: 90 + myDuels.length, code: 'N7' + Math.floor(1000 + Math.random() * 8999) + 'P',
+        symbol: 'TSLA', symbol_name: 'Tesla', start_ts: '2021-11-08', end_ts: '2021-12-21',
+        session_len: 32, status: 'open', challenger_id: 1, challenger_name: 'لاعب تجريبي',
+        opponent_id: null, opponent_name: null, challenger_excess: null, opponent_excess: null,
+        winner_id: null, expires_at: new Date(Date.now() + 24 * 3600e3).toISOString().slice(0, 19),
+      };
+      myDuels = [d, ...myDuels];
+      return new Response(JSON.stringify({ ok: true, duel: d }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };

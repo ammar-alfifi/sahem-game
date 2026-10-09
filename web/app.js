@@ -79,6 +79,7 @@ async function api(path, opts = {}) {
 async function auth() {
   if (IS_MOCK) {
     TOKEN = 'mock:1';
+    USER = { id: 1, username: 'لاعب تجريبي', coins_balance: 72000, level: 3, xp: 1140 };
     return true;
   }
   if (!IS_TG) {
@@ -432,12 +433,8 @@ async function loadLeaderboard() {
 }
 
 /* ════════════ الأركيد ════════════ */
-const AR = { timer: null, chart: null, series: null, volume: null, data: [], round: null, lastStep: -1, preset: 0.25 };
+const AR = { timer: null, chart: null, series: null, volume: null, data: [], round: null, lastStep: -1, preset: 0.25, duelOn: false };
 $('arcade-start').addEventListener('click', startArcade);
-$('arcade-again').addEventListener('click', () => {
-  $('arcade-result').classList.add('hidden');
-  $('arcade-intro').classList.remove('hidden');
-});
 $('arcade-finish').addEventListener('click', finishArcade);
 $('btn-buy').addEventListener('click', () => arTrade('buy'));
 $('btn-sell').addEventListener('click', () => arTrade('sell'));
@@ -451,19 +448,24 @@ $('arcade-presets').addEventListener('click', (e) => {
 async function startArcade() {
   try {
     const rnd = await api('/api/arcade/start', { method: 'POST' });
-    AR.round = rnd; AR.data = []; AR.lastStep = -1;
-    $('arcade-intro').classList.add('hidden');
-    $('arcade-result').classList.add('hidden');
-    $('arcade-game').classList.remove('hidden');
-    $('arcade-symbol').textContent = rnd.name;
-    $('arcade-log').innerHTML = '';
-    $('arcade-avg').textContent = '—';
-    $('arcade-progress-bar').style.width = '0%';
-    initChart();
-    haptic('success');
-    AR.timer = setInterval(pollArcadeStep, Math.max(700, rnd.step_seconds * 500));
-    pollArcadeStep();
+    enterArcadeGame(rnd);
   } catch {}
+}
+
+function enterArcadeGame(rnd) {
+  AR.round = rnd; AR.data = []; AR.lastStep = -1;
+  $('arcade-intro').classList.add('hidden');
+  $('duel-intro').classList.add('hidden');
+  $('arcade-result').classList.add('hidden');
+  $('arcade-game').classList.remove('hidden');
+  $('arcade-symbol').textContent = rnd.name;
+  $('arcade-log').innerHTML = '';
+  $('arcade-avg').textContent = '—';
+  $('arcade-progress-bar').style.width = '0%';
+  initChart();
+  haptic('success');
+  AR.timer = setInterval(pollArcadeStep, Math.max(700, rnd.step_seconds * 500));
+  pollArcadeStep();
 }
 
 function initChart() {
@@ -585,7 +587,157 @@ function showResult(r) {
   $('r-bonus').innerHTML = r.bonus_coins > 0 ? `<span style="color:var(--gold)">+${fmt0(r.bonus_coins)} ◈</span>` : '—';
   $('result-xp').textContent = `⭐ +${r.points} XP`;
   haptic(r.rank.includes('خاسر') ? 'error' : 'success');
+  // مصير المبارزة (إن جاءت من مبارزة)
+  const d = r.duel;
+  const wasDuel = AR.duelOn;
+  if (d) {
+    const el = $('result-duel');
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="vs-badge">⚔️</div> ${esc(d.message || '')}`;
+  } else {
+    $('result-duel').classList.add('hidden');
+  }
+  AR.duelOn = false;
+  $('arcade-again').onclick = () => {
+    $('arcade-result').classList.add('hidden');
+    if (wasDuel || (d && d.state === 'done')) {
+      setArcadeMode('duel');
+      loadDuels().catch(() => {});
+    } else {
+      $('arcade-intro').classList.remove('hidden');
+    }
+  };
   loadPortfolio(true).catch(() => {});
+}
+
+/* ════════════ المبارزات 1v1 (المرحلة 2) ════════════ */
+const BOT_USER = 'Sahmgame_bot';
+let AMODE = 'solo';
+
+function setArcadeMode(mode) {
+  AMODE = mode;
+  document.querySelectorAll('#arcade-seg .seg-b').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  $('arcade-intro').classList.toggle('hidden', mode !== 'solo');
+  $('duel-intro').classList.toggle('hidden', mode !== 'duel');
+  haptic('light');
+  if (mode === 'duel') loadDuels().catch(() => {});
+}
+
+document.querySelectorAll('#arcade-seg .seg-b').forEach(b =>
+  b.addEventListener('click', () => setArcadeMode(b.dataset.mode)));
+
+$('duel-create').addEventListener('click', createDuel);
+$('duel-quick').addEventListener('click', () => joinDuel('?'));
+$('duel-join').addEventListener('click', () => {
+  const code = $('duel-code').value.trim().toUpperCase();
+  if (!code) { toast('اكتب رمز التحدي'); return; }
+  joinDuel(code);
+});
+
+async function loadDuels() {
+  skeletons($('duel-list'), 3);
+  const list = await api('/api/duels').catch(() => []);
+  const active = list.filter(d => d.status === 'active' || d.status === 'open');
+  $('seg-duel-dot').hidden = active.length === 0;
+  const el = $('duel-list');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty"><div class="em">⚔️</div><p>لا مبارزات بعد — أنشئ تحدّياً واقرعه لأصدقائك!</p></div>`;
+    return;
+  }
+  el.innerHTML = list.map(d => duelCard(d)).join('');
+  wireDuelCard(el);
+}
+
+function duelCard(d) {
+  const win = d.winner_id;
+  const meCh = d.challenger_id === USER?.id;   // هويتي الداخلية
+  const myExcess = meCh ? d.challenger_excess : d.opponent_excess;
+  const won = win && win === USER?.id;
+  const lost = win && win !== USER?.id;
+
+  let state = '', right = '', emoji = '⚔️';
+  if (d.status === 'open') {
+    emoji = '📣';
+    state = `<div class="duel-title">تحدي مفتوح بانتظار خصم</div>
+      <div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم • من ${d.start_ts} إلى ${d.end_ts}</div>
+      <div class="duel-share"><code>${d.code}</code>
+      <button class="btn btn-ghost btn-sm duel-copy" data-code="${d.code}">📋 نسخ الرمز</button></div>`;
+  } else if (d.status === 'expired') {
+    emoji = '⌛'; state = '<div class="duel-title">انتهت صلاحية التحدي</div>';
+  } else if (d.status === 'active') {
+    if (myExcess != null) {
+      state = '<div class="duel-title">بانتظار الخصم يُنهي جولته…</div>';
+      right = `<div class="duel-side"><b class="mono ${myExcess >= 0 ? 'up' : 'down'}">${pct(myExcess)}</b><span class="duel-name">عائدك</span></div>`;
+    } else {
+      state = '<div class="duel-title">جاهزة للعب!</div>';
+      right = `<button class="btn btn-primary duel-btn duel-play" data-id="${d.id}">العب جولتك</button>`;
+    }
+    state += `<div class="duel-meta">${esc(d.symbol_name)} • ${d.session_len} يوم • متاح حتى ${d.expires_at.slice(0, 16).replace('T', ' ')}`;
+  } else { // finished
+    emoji = won ? '🏆' : lost ? '💀' : '🤝';
+    const a = pct(d.challenger_excess ?? 0), b = pct(d.opponent_excess ?? 0);
+    state = `<div class="duel-title ${won ? 'win' : lost ? 'lose' : 'tie'}">${won ? 'فوز!' : lost ? 'خسارة' : 'تعادل'}</div>
+      <div class="duel-meta">${esc(d.challenger_name)} ${a} <span class="vs-badge">VS</span> ${esc(d.opponent_name || 'خصم')} ${b}</div>`;
+  }
+  return `<div class="card duel-card">
+    <div class="duel-emoji">${emoji}</div>
+    <div class="duel-mid">${state}</div>
+    ${right || ''}
+  </div>`;
+}
+
+function wireDuelCard(root) {
+  root.querySelectorAll('.duel-play').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = '⏳';
+    try {
+      const res = await api(`/api/duels/${b.dataset.id}/play`, { method: 'POST' });
+      AR.duelOn = true;
+      enterArcadeGame(res.round);
+    } catch (e) { toast(e?.message || 'تعذّر البدء'); b.disabled = false; b.textContent = 'العب جولتك'; }
+  }));
+  root.querySelectorAll('.duel-copy').forEach(b => b.addEventListener('click', async () => {
+    const link = `https://t.me/${BOT_USER}?start=join_${b.dataset.code}`;
+    try { await navigator.clipboard.writeText(link); toast('تم نسخ رابط الدعوة ✅'); }
+    catch { toast('رمز التحدي: ' + b.dataset.code); }
+  }));
+}
+
+async function createDuel() {
+  const btn = $('duel-create'); btn.disabled = true; btn.textContent = '⏳ جاري التعداد…';
+  try {
+    const res = await api('/api/duels', { method: 'POST' });
+    haptic('success');
+    await loadDuels();
+    toast(`تحدي جاهز — شارك الرمز ${res.duel.code}`);
+  } catch (e) { toast(e?.message || 'تعذّر الإنشاء'); }
+  btn.disabled = false; btn.textContent = '🎯 أنشئ تحدّياً وشاركه';
+}
+
+async function joinDuel(code) {
+  try {
+    const res = await api('/api/duels/join', { method: 'POST', body: JSON.stringify({ code }) });
+    haptic('success');
+    toast('⚔️ قبلت التحدي — العب جولتك الآن!');
+    await loadDuels();
+  } catch (e) { toast(e?.message || 'فشل الانضمام'); }
+}
+
+/* ════════════ الدوري الأسبوعي (المرحلة 2) ════════════ */
+async function loadLeague() {
+  const lg = await api('/api/league').catch(() => null);
+  if (!lg) return;
+  $('lg-countdown').textContent = '⏳ ' + lg.countdown;
+  const medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
+  const top = (lg.standings || []).slice(0, 5);
+  $('lg-top').innerHTML = top.length
+    ? top.map(r => `<div class="lg-row${r.username === USER?.username ? ' me' : ''}">
+        <span class="lg-rank">${medals[r.rank] || r.rank}</span>
+        <span class="lg-name">${esc(r.username || 'لاعب')}</span>
+        <span class="lg-score">${r.score >= 0 ? '+' : ''}${fmt(r.score, 1)} نقطة</span>
+      </div>`).join('')
+    : '<div class="lg-row"><span class="lg-name">لا نتائج هذا الأسبوع بعد — العب جولة!</span></div>';
+  $('lg-prizes').innerHTML = (lg.prizes || [])
+    .map(p => `<span style="margin-left:10px">🏅 ${p.rank}: ${fmt0(p.coins)} ◈ + ${p.xp} XP</span>`).join('');
 }
 
 /* ════════════ التبويبات ════════════ */
@@ -594,7 +746,7 @@ const LOADERS = {
   arcade: null,
   predict: loadPredict,
   portfolio: () => loadPortfolio(false),
-  leaderboard: loadLeaderboard,
+  leaderboard: () => Promise.allSettled([loadLeague(), loadLeaderboard()]),
 };
 $('bottom-nav').addEventListener('click', (e) => {
   const btn = e.target.closest('.tab'); if (!btn || btn.classList.contains('active')) return;

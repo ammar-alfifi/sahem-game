@@ -17,6 +17,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 
 from . import services, market_data
+from . import duels as duels_mod
+from . import league as league_mod
 from .constants import ALL_SYMBOLS
 from .config import get_bot_token
 from .db import init_db
@@ -44,6 +46,41 @@ async def job_resolve_predictions():
         # إشعار المستخدمين (النتائج محفوظة؛ MVP: بدون رسائل فردية)
     except Exception as e:
         log.warning(f"resolve_predictions failed: {e}")
+
+
+async def job_resolve_duels():
+    try:
+        n = duels_mod.resolve_due_duels()
+        if n:
+            log.info(f"spawned {n} duels resolved")
+    except Exception as e:
+        log.warning(f"resolve_duels failed: {e}")
+
+
+async def job_league_award():
+    try:
+        res = league_mod.award_weekly()
+        log.info(f"league award: {len(res.get('winners', []))} winners")
+        # إشعار المكرمين بالبوت (حسب telegram_id)
+        try:
+            from aiogram import Bot
+            bot = Bot(get_bot_token())
+            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            for w in league_mod.winners_telegram_ids():
+                try:
+                    await bot.send_message(
+                        w["telegram_id"],
+                        f"🏆 الدوري الأسبوعي — الجوائز وصلت!\n"
+                        f"{medals.get(w['rank'], '#' + str(w['rank']))} جئت مركز {w['rank']}\n"
+                        f"🎁 حصلت على {w['prize_coins']:,} عملة وهمية — مبادرة التداول الجديد!",
+                    )
+                except Exception:
+                    pass
+            await bot.session.close()
+        except Exception:
+            pass
+    except Exception as e:
+        log.warning(f"league award failed: {e}")
 
 
 scheduler = AsyncIOScheduler(timezone="UTC")
@@ -79,9 +116,12 @@ async def lifespan(app: FastAPI):
         await bot.set_webhook(webhook_url, drop_pending_updates=True, secret_token=os.getenv("WEBHOOK_SECRET"))
         log.info(f"webhook set: {webhook_url}")
 
-    # مجدول: تحديث الأسعار كل ساعة + تسوية التوقعات
+    # مجدول: تحديث الأسعار كل ساعة + تسوية التوقعات + صلاحية المبارزات + دوري الجمعة
     scheduler.add_job(job_refresh_prices, "interval", minutes=60, id="refresh_prices")
     scheduler.add_job(job_resolve_predictions, "interval", minutes=60, id="resolve_predictions")
+    scheduler.add_job(job_resolve_duels, "interval", minutes=30, id="resolve_duels")
+    scheduler.add_job(job_league_award, "cron", day_of_week="fri", hour=0, minute=5,
+                      timezone="Asia/Riyadh", id="league_award")
     scheduler.start()
 
     # تحديث أولي غير حاجز + تهيئة التاريخ تلقائياً إذا كان فارغاً
@@ -192,7 +232,7 @@ async def root():
     return {"name": "سهم API", "docs": "/docs", "app": "/app/"}
 
 
-BUILD_STAMP = "1.0"
+BUILD_STAMP = "2.0-duels"
 
 @app.get("/health")
 async def health():
@@ -317,12 +357,88 @@ async def api_arcade_finish(round_id: int, request: Request, authorization: Opti
     res = services.finish_arcade_round(round_id, uid)
     if not res:
         raise HTTPException(404, "الجولة غير موجودة")
+    d = res.get("duel")
+    if d and d.get("state") == "done":
+        asyncio.create_task(duels_mod.notify_opponent_story(d["duel"]["id"], uid, d["message"]))
     return res
 
 
 @app.get("/api/leaderboard")
 async def api_leaderboard():
     return services.weekly_leaderboard(20)
+
+
+# ---------- المبارزات 1v1 (المرحلة 2) ----------
+@app.get("/api/duels")
+async def api_duels(request: Request, authorization: Optional[str] = Header(None)):
+    uid = _auth(request, authorization)
+    return duels_mod.list_duels(uid)
+
+
+@app.post("/api/duels")
+async def api_duel_create(request: Request, authorization: Optional[str] = Header(None)):
+    uid = _auth(request, authorization)
+    res = duels_mod.create_duel(uid)
+    if not res.get("ok"):
+        raise HTTPException(400, res["error"])
+    return res
+
+
+@app.post("/api/duels/join")
+async def api_duel_join(request: Request, authorization: Optional[str] = Header(None)):
+    uid = _auth(request, authorization)
+    data = await request.json()
+    res = duels_mod.join_duel(uid, str(data.get("code", "")).strip())
+    if not res.get("ok"):
+        raise HTTPException(400, res["error"])
+    asyncio.create_task(duels_mod.notify_challenger_joined(res["duel"]["id"]))
+    return res
+
+
+@app.post("/api/duels/{duel_id}/play")
+async def api_duel_play(duel_id: int, request: Request, authorization: Optional[str] = Header(None)):
+    uid = _auth(request, authorization)
+    res = duels_mod.play_duel_round(uid, duel_id)
+    if not res.get("ok"):
+        raise HTTPException(400, res["error"])
+    return res
+
+
+# ---------- الدوري الأسبوعي (المرحلة 2) ----------
+@app.get("/api/league")
+async def api_league():
+    ps, pe = league_mod.current_period()
+    return {
+        "period_start": ps,
+        "period_end": pe,
+        "countdown": league_mod.week_countdown(),
+        "standings": league_mod.standings(ps, limit=10),
+        "prizes": [
+            {"rank": 1, "coins": 50000, "xp": 500},
+            {"rank": 2, "coins": 30000, "xp": 300},
+            {"rank": 3, "coins": 20000, "xp": 200},
+            {"rank": "4-10", "coins": 10000, "xp": 100},
+        ],
+        "rules": "المجموعة = مجموع عائدك الزائد في جولات الأركيد + 2 نقطة لكل توقع صحيح — على الأقل 3 جولات لجائزة",
+    }
+
+
+@app.post("/api/league/resolved")
+async def api_league_resolved(request: Request, authorization: Optional[str] = Header(None)):
+    """سجل النتائج لفترة معينة (يسأل واجهة «آخر بطل»)."""
+    uid = _auth(request, authorization)
+    data = await request.json()
+    ps = data.get("period_start")
+    from .db import get_db
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT lr.rank, lr.score, lr.prize_coins, u.username
+           FROM league_results lr JOIN users u ON u.id = lr.user_id
+           WHERE lr.period_start=? ORDER BY lr.rank LIMIT 10""",
+        (ps,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ---------- التطبيق المصغّر (ملفات ثابتة) ----------

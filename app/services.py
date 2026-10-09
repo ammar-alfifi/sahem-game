@@ -294,8 +294,8 @@ ARCADE_MAX_SESSION = 45
 ACTIVE_ROUNDS: dict[int, dict] = {}
 
 
-def start_arcade_round(user_id: int) -> dict | None:
-    """نافذة تاريخية عشوائية: رمز عشوائي + بداية عشوائية + مدة عشوائية."""
+def _pick_random_window() -> dict | None:
+    """اختيار رمز + نافذة تاريخية عشوائية (مشتركة بين الفردي والمبارزات)."""
     symbols = market_data.get_available_symbols(min_candles=ARCADE_MAX_SESSION + 10)
     if not symbols:
         return None
@@ -305,34 +305,57 @@ def start_arcade_round(user_id: int) -> dict | None:
         """SELECT MIN(ts) as first, MAX(ts) as last, COUNT(*) as n FROM candles WHERE symbol=?""",
         (symbol,),
     ).fetchone()
+    conn.close()
     if not count_row or count_row["n"] < ARCADE_MAX_SESSION + 10:
-        conn.close()
         return None
     first = datetime.fromisoformat(count_row["first"])
     last = datetime.fromisoformat(count_row["last"])
-    # نافذة عشوائية
     session_len = random.randint(ARCADE_MIN_SESSION, ARCADE_MAX_SESSION)  # أيام تداول
     random_position = random.randint(0, max(1, (last - first).days))
     start_ts = first + timedelta(days=random_position)
-    # الأيام التقويمية التقريبية لتحويل جلسات تداول
     end_ts = start_ts + timedelta(days=int(session_len * 1.6) + 3)
     end_ts = min(end_ts, last)
+    return {
+        "symbol": symbol,
+        "session_len": session_len,
+        "start_ts": start_ts.strftime("%Y-%m-%d"),
+        "end_ts": end_ts.strftime("%Y-%m-%d"),
+    }
 
-    round_row = conn.execute(
-        """INSERT INTO arcade_rounds(user_id, scenario_seed, start_ts, end_ts, capital)
-           VALUES(?,?,?,?,?)""",
-        (user_id, f"{symbol}:{session_len}", start_ts.strftime("%Y-%m-%d"), end_ts.strftime("%Y-%m-%d"), STARTING_CAPITAL),
+
+def start_arcade_round(
+    user_id: int,
+    fixed_window: dict | None = None,
+    kind: str = "solo",
+    duel_id: int | None = None,
+) -> dict | None:
+    """نافذة تاريخية عشوائية (أو مثبتة لمبارزة 1v1)."""
+    if fixed_window:
+        w = fixed_window
+    else:
+        w = _pick_random_window()
+    if not w:
+        return None
+    symbol = w["symbol"]
+
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO arcade_rounds(user_id, scenario_seed, start_ts, end_ts, capital, kind, duel_id)
+           VALUES(?,?,?,?,?,?,?)""",
+        (user_id, f"{symbol}:{w['session_len']}", w["start_ts"], w["end_ts"], STARTING_CAPITAL, kind, duel_id),
     )
-    round_id = round_row.lastrowid
+    round_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.commit()
     conn.close()
 
     ACTIVE_ROUNDS[round_id] = {
         "user_id": user_id,
         "symbol": symbol,
-        "session_len": session_len,
-        "start_ts": start_ts.strftime("%Y-%m-%d"),
-        "end_ts": end_ts.strftime("%Y-%m-%d"),
+        "session_len": w["session_len"],
+        "start_ts": w["start_ts"],
+        "end_ts": w["end_ts"],
+        "kind": kind,
+        "duel_id": duel_id,
         "cash": float(STARTING_CAPITAL),
         "holdings": 0.0,
         "avg_cost": 0.0,
@@ -344,9 +367,11 @@ def start_arcade_round(user_id: int) -> dict | None:
         "symbol": symbol,
         "name": symbol_name(symbol),
         "capital": STARTING_CAPITAL,
-        "session_len": session_len,
+        "session_len": w["session_len"],
         "step_seconds": ARCADE_STEP_SECONDS,
-        "start_ts": start_ts.strftime("%Y-%m-%d"),
+        "start_ts": w["start_ts"],
+        "kind": kind,
+        "duel_id": duel_id,
     }
 
 
@@ -438,15 +463,16 @@ def finish_arcade_round(round_id: int, user_id: int) -> dict | None:
     bonus = bonus_coins_for_round(final_value, round_row["capital"])
 
     conn.execute(
-        "UPDATE arcade_rounds SET final_value=?, rank=?, played_at=? WHERE id=?",
-        (round(final_value, 2), rank, _now_iso(), round_id),
+        "UPDATE arcade_rounds SET final_value=?, rank=?, excess_return=?, played_at=? WHERE id=?",
+        (round(final_value, 2), rank, round(excess, 4), _now_iso(), round_id),
     )
     conn.execute("UPDATE users SET coins_balance = coins_balance + ? WHERE id=?", (bonus, user_id))
     conn.execute("UPDATE users SET xp = xp + ? WHERE id=?", (pts, user_id))
     conn.execute("UPDATE users SET level = 1 + (xp / 500) WHERE id=?", (user_id,))
     conn.commit()
     conn.close()
-    return {
+
+    result = {
         "final_value": round(final_value, 2),
         "capital": round_row["capital"],
         "return_pct": round(stock_return, 2),
@@ -457,6 +483,16 @@ def finish_arcade_round(round_id: int, user_id: int) -> dict | None:
         "bonus_coins": bonus,
         "days": days,
     }
+
+    # مبارزة 1v1؟ سجّل النتيجة وقد تعلن النتيجة الكاملة هنا
+    row_keys = set(round_row.keys()) if round_row else set()
+    if "kind" in row_keys and round_row["kind"] == "duel" and "duel_id" in row_keys:
+        from .duels import record_duel_result
+        duel_outcome = record_duel_result(round_row["duel_id"], user_id, round(excess, 2))
+        if duel_outcome:
+            result["duel"] = duel_outcome
+
+    return result
 
 
 # ---------- الصدارة والمبارزات (لاحقاً في المرحلة 2) ----------
