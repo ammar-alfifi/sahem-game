@@ -120,6 +120,29 @@ async def lifespan(app: FastAPI):
         await bot.set_webhook(webhook_url, drop_pending_updates=True, secret_token=os.getenv("WEBHOOK_SECRET"))
         log.info(f"webhook set: {webhook_url}")
 
+    # قائمة الأوامر المقترحة تلقائيًا عند كتابة «/» (وفي زر القائمة)
+    try:
+        commands = [
+            ("start", "🚀 القائمة الرئيسية والابدء"),
+            ("markets", "📊 الأسعار الحية لكل الأسواق"),
+            ("predict", "🎯 توقّع إغلاق اليوم"),
+            ("portfolio", "💼 محفظتك ورصيدك"),
+            ("leaderboard", "🏆 لوحة الصدارة"),
+            ("league", "🥇 الدوري الأسبوعي والجوائز"),
+            ("duel", "⚔️ أنشئ تحدي مبارزة وشاركه"),
+            ("join", "🤝 انضم بمبارزة صديق (/join CODE)"),
+            ("balance", "💳 رصيدك ومستواك ودقتك"),
+            ("arcade", "⚡ جولة أركيد سريعة"),
+            ("help", "📖 شرح جميع الأوامر"),
+        ]
+        from aiogram.types import BotCommand
+        await bot.set_my_commands(
+            [BotCommand(command=c, description=desc) for c, desc in commands],
+        )
+        log.info(f"my_commands set: {len(commands)} commands")
+    except Exception as e:
+        log.warning(f"set_my_commands failed: {e}")
+
     # مجدول: تحديث الأسعار كل ساعة + تسوية التوقعات + صلاحية المبارزات + دوري الجمعة
     scheduler.add_job(job_refresh_prices, "interval", minutes=60, id="refresh_prices")
     scheduler.add_job(job_resolve_predictions, "interval", minutes=60, id="resolve_predictions")
